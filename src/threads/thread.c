@@ -28,8 +28,8 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
-/* List of processes in THREAD_SLEEPING state, that is, processes
-   that are currently sleeping and not ready to run. */
+/* P1 update */
+/* List of processes currently sleeping and not ready to run. */
 static struct list sleeping_list;
 
 /* Idle thread. */
@@ -94,7 +94,7 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
-  list_init (&ready_list);
+  list_init (&ready_list);    /* P1 update */
   list_init (&sleeping_list);
   list_init (&all_list);
 
@@ -143,7 +143,7 @@ thread_tick (void)
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
 
-  // for item in sleeping list, thread_update_remaining_sleep(item)
+  /* P1 update */
   struct list_elem *e;
   ASSERT (intr_get_level () == INTR_OFF);
 
@@ -243,8 +243,7 @@ thread_block (void)
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
 
-  struct thread *cur = thread_current ();
-  cur->status = THREAD_BLOCKED;
+  thread_current ()->status = THREAD_BLOCKED;
   schedule ();
 }
 
@@ -612,6 +611,7 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
+/* P1 update */
 void
 insert_sleeping_list (int64_t ticks)
 {
