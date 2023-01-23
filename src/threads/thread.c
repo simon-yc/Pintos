@@ -28,6 +28,10 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/* List of processes in THREAD_SLEEPING state, that is, processes
+   that are currently sleeping and not ready to run. */
+static struct list sleeping_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -91,6 +95,7 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+  list_init (&sleeping_list);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -216,7 +221,8 @@ thread_block (void)
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
 
-  thread_current ()->status = THREAD_BLOCKED;
+  struct thread *cur = thread_current ();
+  cur->status = THREAD_BLOCKED;
   schedule ();
 }
 
@@ -462,8 +468,8 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
-  t->magic = THREAD_MAGIC;
   t->sleep_remaining = 0;
+  t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -584,18 +590,55 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
+void
+insert_sleeping_list (int64_t ticks)
+{
+  struct thread *cur = thread_current ();
+  cur->sleep_remaining = ticks;
+  list_push_back (&sleeping_list, &cur->elem);
+  thread_block();
+}
+
+void
+thread_update_sleeping_list (void)
+{
+  // for item in sleeping list, thread_update_remaining_sleep(item)
+  struct list_elem *e;
+
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      bool wakeup = thread_update_remaining_sleep (t);
+      if (wakeup)
+        {
+          thread_unblock(t);
+          list_remove(e);
+        }
+    }
+}
+
 /* If thread t is currently sleeping, update the remaining 
    sleep ticks of t by reducing the sleep_remaining. If ticks
    reaches zero, we unblock the thread. */
-void
-thread_update_remaining_sleep(struct thread *t, void *aux UNUSED)
+bool
+thread_update_remaining_sleep (struct thread *t)
 {
   if (t->status != THREAD_BLOCKED || t->sleep_remaining <= 0)
-    return;
+    return false;
 
   if (t->sleep_remaining > 0)
     t->sleep_remaining--;
     
   if (t->sleep_remaining == 0)
-		thread_unblock(t);
+    {
+      list_push_back (&ready_list, &t->elem);
+      return true;
+    }
+
+  return false;
 }
+
+

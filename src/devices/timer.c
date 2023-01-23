@@ -93,9 +93,7 @@ timer_sleep (int64_t ticks)
     {
       ASSERT (intr_get_level () == INTR_ON);
       enum intr_level old_level = intr_disable ();
-      struct thread *cur = thread_current ();
-      cur->sleep_remaining = ticks;
-      thread_block ();
+      insert_sleeping_list (ticks);
       intr_set_level (old_level);
     }
 }
@@ -175,7 +173,9 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  thread_foreach (&thread_update_remaining_sleep, NULL);
+  enum intr_level old_level = intr_disable ();
+  thread_update_sleeping_list();
+  intr_set_level (old_level);
   thread_tick ();
 }
 

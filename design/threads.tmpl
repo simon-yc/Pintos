@@ -30,13 +30,39 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+Added to struct thread:
+
+    /* Members for implementing thread_update_remaining_sleep(). */
+    int64_t sleep_remaining;   
+
+    /* Thread remaining sleep time. Initialized to 0.
+    We need each thread to keep track of its reamaining sleep time */
+    
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
+Originally, timer-sleep() used busy wait. This never puts the thread 
+to real sleep, rather, the current thread is in a while loop and simply
+gets pushed to the back of the ready queue. Its a waste of resources to 
+run this all the time.
+
+In our new implementation, we make it more efficient by blocking it 
+until the thread's sleeping time finishes. Each time the timer 
+interrupt handler runs, while it increase the global variable ticks 
+by 1, it also checks each thread and decrease the sleep_remaining 
+of each sleeping thread by 1. If sleep_remaining falls blow 
+
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
+
+We create a list for sleeping threads in thread.c, so each time we need
+check if one thread finishes its sleep time, we only have to check the 
+threads that is sleep (threads that called timer_sleep). If there is no
+sleeping threads, the timer interrupt handler needs to go through all
+the threads.
+
 
 ---- SYNCHRONIZATION ----
 
