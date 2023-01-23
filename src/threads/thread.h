@@ -102,6 +102,8 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+    struct list_elem sleepelem;         /* List element for sleeping
+	                                       threads. */
   };
 
 /* If false (default), use round-robin scheduler.

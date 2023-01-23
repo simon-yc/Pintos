@@ -142,6 +142,28 @@ thread_tick (void)
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
+
+  // for item in sleeping list, thread_update_remaining_sleep(item)
+  struct list_elem *e;
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, sleepelem);
+
+      if (t->status != THREAD_BLOCKED || t->sleep_remaining <= 0)
+        return;
+
+      if (t->sleep_remaining > 0)
+        t->sleep_remaining--;
+        
+      if (t->sleep_remaining <= 0)
+        {
+          thread_unblock(t);
+          list_remove(e);
+        }
+    }
 }
 
 /* Prints thread statistics. */
@@ -595,50 +617,6 @@ insert_sleeping_list (int64_t ticks)
 {
   struct thread *cur = thread_current ();
   cur->sleep_remaining = ticks;
-  list_push_back (&sleeping_list, &cur->elem);
-  thread_block();
+  list_push_front (&sleeping_list, &cur->sleepelem);
+  thread_block ();
 }
-
-void
-thread_update_sleeping_list (void)
-{
-  // for item in sleeping list, thread_update_remaining_sleep(item)
-  struct list_elem *e;
-
-  ASSERT (intr_get_level () == INTR_OFF);
-
-  for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);
-       e = list_next (e))
-    {
-      struct thread *t = list_entry (e, struct thread, elem);
-      bool wakeup = thread_update_remaining_sleep (t);
-      if (wakeup)
-        {
-          thread_unblock(t);
-          list_remove(e);
-        }
-    }
-}
-
-/* If thread t is currently sleeping, update the remaining 
-   sleep ticks of t by reducing the sleep_remaining. If ticks
-   reaches zero, we unblock the thread. */
-bool
-thread_update_remaining_sleep (struct thread *t)
-{
-  if (t->status != THREAD_BLOCKED || t->sleep_remaining <= 0)
-    return false;
-
-  if (t->sleep_remaining > 0)
-    t->sleep_remaining--;
-    
-  if (t->sleep_remaining == 0)
-    {
-      list_push_back (&ready_list, &t->elem);
-      return true;
-    }
-
-  return false;
-}
-
-
