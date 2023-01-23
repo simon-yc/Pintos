@@ -610,7 +610,7 @@ thread_update_sleeping_list (void)
   for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);
        e = list_next (e))
     {
-      struct thread *t = list_entry (e, struct thread, allelem);
+      struct thread *t = list_entry (e, struct thread, elem);
       bool wakeup = thread_update_remaining_sleep (t);
       if (wakeup)
         {
