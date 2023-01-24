@@ -46,23 +46,29 @@ Added to struct thread:
 Originally, timer-sleep() used busy wait. This never puts the thread 
 to real sleep, rather, the current thread is in a while loop and simply
 gets pushed to the back of the ready queue. Its a waste of resources to 
-run this all the time.
+run this all the time. For the timer interrupt handler, each time it 
+runs, the variable ticks will be increased by 1.
 
 In our new implementation, we make it more efficient by blocking it 
 until the thread's sleeping time finishes. Each time the timer 
 interrupt handler runs, while it increase the global variable ticks 
 by 1, it also checks each thread and decrease the sleep_remaining 
-of each sleeping thread by 1. If sleep_remaining falls blow 
+of each sleeping thread by 1. If sleep_remaining of the thread
+is reduced to 0, move the thread back to the ready list by unblocking
+it. 
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
 
-We create a list for sleeping threads in thread.c, so each time we need
-check if one thread finishes its sleep time, we only have to check the 
-threads that is sleep (threads that called timer_sleep). If there is no
-sleeping threads, the timer interrupt handler needs to go through all
-the threads.
-
+We create a list for sleeping threads in thread.c to keep track of all 
+the threads that are currently in sleep. Then each time we want to 
+update and check if one thread finishes its sleeping time, which is 
+happending each time the timer interrupt handler runs, instead of 
+checking all threads, we only have to check the threads that are in the 
+sleeping list(threads that called timer_sleep and haven't woken up yet). 
+This step minimizes the time spent in the timer interrupt handler 
+because if there are no or only a few sleeping threads, the timer 
+interrupt handler needs to go through all the threads.
 
 ---- SYNCHRONIZATION ----
 
