@@ -149,4 +149,7 @@ bool thread_update_remaining_sleep(struct thread *);
 bool sleep_compare (const struct list_elem *a,
                     const struct list_elem *b,
                     void *aux UNUSED);
+bool thread_priority_less (const struct list_elem *thread_a, 
+                           const struct list_elem *thread_b, 
+                           void *aux UNUSED);
 #endif /* threads/thread.h */

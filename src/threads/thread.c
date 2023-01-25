@@ -223,6 +223,13 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  /* P1 update - Yield to allow the highest priority thread 
+     run if current thread don't have the highest priority. */
+  if (thread_current ()->priority < priority)
+    {
+      thread_yield ();
+    }
+
   return tid;
 }
 
@@ -259,7 +266,12 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+
+  /* P1 update - insert the thread to the ready list so the 
+     list is sorted by priority */
+  list_insert_ordered (&ready_list, &t->elem, 
+                       (list_less_func *) &thread_priority_less, 
+                       NULL); 
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -330,7 +342,11 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    /* P1 update - insert the current thread to the ready list so
+       the list is sorted by priority */
+    list_insert_ordered (&ready_list, &cur->elem, 
+                         (list_less_func *) &thread_priority_less, 
+                         NULL); 
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -358,6 +374,11 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+
+  /* P1 update - After updating the priority, yield to
+     allow the highest priority thread run if current thread
+     is no longer the highest. */
+  thread_yield ();
 }
 
 /* Returns the current thread's priority. */
@@ -488,7 +509,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
-  list_push_back (&all_list, &t->allelem);
+  /* P1 update - insert the current thread to the ready list so
+     the list is sorted by priority */
+  list_insert_ordered (&all_list, &t->allelem, 
+                       (list_less_func *) &thread_priority_less, 
+                       NULL); 
   intr_set_level (old_level);
 }
 
@@ -629,4 +654,17 @@ sleep_compare (const struct list_elem *a,
   struct thread *t = list_entry(a, struct thread, sleepelem);
   struct thread *p = list_entry(b, struct thread, sleepelem);
   return t->wakeup_time < p->wakeup_time;
+}
+
+/* P1 update */
+/* Returns true if thread_a's priority is higher than thread_b, 
+   return false otherwise. */
+bool
+thread_priority_less (const struct list_elem *thread_a, 
+                      const struct list_elem *thread_b, 
+                      void *aux UNUSED)
+{
+  int priority_a = list_entry(thread_a, struct thread, elem)->priority;
+  int priority_b = list_entry(thread_b, struct thread, elem)->priority;
+  return priority_a > priority_b;
 }
