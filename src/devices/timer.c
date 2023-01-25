@@ -84,17 +84,17 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-/* Sleeps for approximately TICKS timer ticks.  Interrupts must
+/* P1 update - Sleeps for approximately TICKS timer sleep_ticks.  Interrupts must
    be turned on. */
 void
-timer_sleep (int64_t ticks) 
+timer_sleep (int64_t sleep_ticks) 
 {
   /* P1 update update timer_sleep to avoid busy wait*/
-  if (ticks > 0)
+  if (sleep_ticks > 0)
     {
       ASSERT (intr_get_level () == INTR_ON);
       enum intr_level old_level = intr_disable ();
-      insert_sleeping_list (ticks);
+      insert_sleeping_list (ticks + sleep_ticks);
       intr_set_level (old_level);   
     }
 }
@@ -174,7 +174,7 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  thread_tick ();
+  thread_tick (ticks);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

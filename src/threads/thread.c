@@ -125,7 +125,7 @@ thread_start (void)
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
 void
-thread_tick (void) 
+thread_tick (int64_t ticks) 
 {
   struct thread *t = thread_current ();
 
@@ -143,9 +143,8 @@ thread_tick (void)
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
 
-  /* P1 update - update sleep_remaining of threads in the 
-     sleeping list. Move thread back to ready list if 
-     finished sleeping. */
+  /* P1 update - Move thread back to ready list and 
+     unblock it if finished sleeping. */
   struct list_elem *e;
   ASSERT (intr_get_level () == INTR_OFF);
 
@@ -153,18 +152,12 @@ thread_tick (void)
        e = list_next (e))
     {
       struct thread *t = list_entry (e, struct thread, sleepelem);
-
-      if (t->status != THREAD_BLOCKED || t->sleep_remaining <= 0)
+      
+      if (t->wakeup_time > ticks)
         return;
-
-      if (t->sleep_remaining > 0)
-        t->sleep_remaining--;
-        
-      if (t->sleep_remaining <= 0)
-        {
-          thread_unblock(t);
-          list_remove(e);
-        }
+      
+      thread_unblock(t);
+      list_remove(e);
     }
 }
 
@@ -491,7 +484,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
-  t->sleep_remaining = 0;
+  t->wakeup_time = 0;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -619,7 +612,18 @@ void
 insert_sleeping_list (int64_t ticks)
 {
   struct thread *cur = thread_current ();
-  cur->sleep_remaining = ticks;
-  list_push_back (&sleeping_list, &cur->sleepelem);
+  list_insert_ordered (&sleeping_list, &cur->sleepelem, 
+                       (list_less_func *) &sleep_compare, NULL);
   thread_block ();
+}
+
+/* P1 update */
+/* compare the wakeup_time of thread a and b ot help sorting
+   when insert to sleeping list*/
+bool
+sleep_compare (const struct list_elem *a,
+               const struct list_elem *b,
+               void *aux)
+{
+  return list_entry(a, struct thread, elem)->wakeup_time < list_entry(b, struct thread, elem)->wakeup_time;
 }

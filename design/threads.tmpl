@@ -32,11 +32,10 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 
 Added to struct thread:
 
-    /* Members for implementing thread_update_remaining_sleep(). */
-    int64_t sleep_remaining;   
+    int64_t wakeup_time;   
 
-    /* Thread remaining sleep time. Initialized to 0.
-    We need each thread to keep track of its reamaining sleep time */
+    /* Thread wakeup time. Initialized to 0.
+    We need each thread to keep track of its wakeup time */
     
 ---- ALGORITHMS ----
 
@@ -44,31 +43,32 @@ Added to struct thread:
 >> including the effects of the timer interrupt handler.
 
 Originally, timer-sleep() used busy wait. This never puts the thread 
-to real sleep, rather, the current thread is in a while loop and simply
-gets pushed to the back of the ready queue. Its a waste of resources to 
-run this all the time. For the timer interrupt handler, each time it 
-runs, the variable ticks will be increased by 1.
+to sleep, rather, the current thread is in a while loop and simply
+gets pushed to the back of the ready queue. This is a waste of resources
+to have this constantly running. Each time the interrupt handler runs, 
+the variable ticks is increased by 1.
 
 In our new implementation, we make it more efficient by blocking it 
-until the thread's sleeping time finishes. Each time the timer 
-interrupt handler runs, while it increase the global variable ticks 
-by 1, it also checks each thread and decrease the sleep_remaining 
-of each sleeping thread by 1. If sleep_remaining of the thread
-is reduced to 0, move the thread back to the ready list by unblocking
-it. 
+until the thread's sleeping time finishes. This way, we save valuable
+CPU storage. Every time the timer interrupt handler runs, the global 
+variable ticks increases by 1, it also checks each thread and decrease 
+the wakeup_time of each sleeping thread by 1. If wakeup_time of 
+the thread is reduced to 0, move the thread back to the ready list by 
+unblocking it.
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
 
 We create a list for sleeping threads in thread.c to keep track of all 
-the threads that are currently in sleep. Then each time we want to 
-update and check if one thread finishes its sleeping time, which is 
-happending each time the timer interrupt handler runs, instead of 
-checking all threads, we only have to check the threads that are in the 
-sleeping list(threads that called timer_sleep and haven't woken up yet). 
-This step minimizes the time spent in the timer interrupt handler 
-because if there are no or only a few sleeping threads, the timer 
-interrupt handler needs to go through all the threads.
+the threads that are currently in sleep. Each time we want to check if any
+threads needs to wake up (and get moved to the ready list), we can simply
+iterate through the sleeping list. This is more efficient because we only
+need to check the threads that are sleeping, rather than all of the threads.
+Furthermore, we keep the sleeping list in ascending order of wake time, so
+that we can stop checking once we encounter a thread with greater wake up time
+than current ticks. This minimizes the time spent in the timer interrupt handler
+because we only deal with the sleeping thread and we only need to perform a 
+minimal amount of checks to wake up threads.
 
 ---- SYNCHRONIZATION ----
 
