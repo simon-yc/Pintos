@@ -146,7 +146,4 @@ int thread_get_load_avg (void);
 void insert_sleeping_list (int64_t);
 void thread_update_sleeping_list(void);
 bool thread_update_remaining_sleep(struct thread *);
-bool thread_priority_less (const struct list_elem *thread_a, 
-                           const struct list_elem *thread_b, 
-                           void *aux UNUSED);
 #endif /* threads/thread.h */
