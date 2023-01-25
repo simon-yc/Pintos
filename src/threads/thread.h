@@ -148,5 +148,5 @@ void thread_update_sleeping_list(void);
 bool thread_update_remaining_sleep(struct thread *);
 bool sleep_compare (const struct list_elem *a,
                     const struct list_elem *b,
-                    void *aux);
+                    void *aux UNUSED);
 #endif /* threads/thread.h */

@@ -624,7 +624,7 @@ insert_sleeping_list (int64_t ticks)
 bool
 sleep_compare (const struct list_elem *a,
                const struct list_elem *b,
-               void *aux)
+               void *aux UNUSED)
 {
   struct thread *t = list_entry(a, struct thread, sleepelem);
   struct thread *p = list_entry(b, struct thread, sleepelem);
