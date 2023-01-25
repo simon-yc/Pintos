@@ -153,7 +153,7 @@ thread_tick (int64_t ticks)
     {
       struct thread *t = list_entry (e, struct thread, sleepelem);
       
-      if (t->wakeup_time > ticks)
+      if (t->wakeup_time < ticks)
         return;
       
       thread_unblock(t);
@@ -612,6 +612,7 @@ void
 insert_sleeping_list (int64_t ticks)
 {
   struct thread *cur = thread_current ();
+  cur->wakeup_time = ticks;
   list_insert_ordered (&sleeping_list, &cur->sleepelem, 
                        (list_less_func *) &sleep_compare, NULL);
   thread_block ();
