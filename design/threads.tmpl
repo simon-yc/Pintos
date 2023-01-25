@@ -30,13 +30,45 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+Added to struct thread:
+
+    int64_t wakeup_time;   
+
+    /* Thread wakeup time. Initialized to 0.
+    We need each thread to keep track of its wakeup time */
+    
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
+Originally, timer-sleep() used busy wait. This never puts the thread 
+to sleep, rather, the current thread is in a while loop and simply
+gets pushed to the back of the ready queue. This is a waste of resources
+to have this constantly running. Each time the interrupt handler runs, 
+the variable ticks is increased by 1.
+
+In our new implementation, we make it more efficient by blocking it 
+until the thread's sleeping time finishes. This way, we save valuable
+CPU storage. Every time the timer interrupt handler runs, the global 
+variable ticks increases by 1, it also checks each thread and decrease 
+the wakeup_time of each sleeping thread by 1. If wakeup_time of 
+the thread is reduced to 0, move the thread back to the ready list by 
+unblocking it.
+
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
+
+We create a list for sleeping threads in thread.c to keep track of all 
+the threads that are currently in sleep. Each time we want to check if any
+threads needs to wake up (and get moved to the ready list), we can simply
+iterate through the sleeping list. This is more efficient because we only
+need to check the threads that are sleeping, rather than all of the threads.
+Furthermore, we keep the sleeping list in ascending order of wake time, so
+that we can stop checking once we encounter a thread with greater wake up time
+than current ticks. This minimizes the time spent in the timer interrupt handler
+because we only deal with the sleeping thread and we only need to perform a 
+minimal amount of checks to wake up threads.
 
 ---- SYNCHRONIZATION ----
 

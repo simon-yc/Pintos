@@ -28,6 +28,10 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/* P1 update */
+/* List of processes currently sleeping and not ready to run. */
+static struct list sleeping_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -90,7 +94,8 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
-  list_init (&ready_list);
+  list_init (&ready_list);    /* P1 update */
+  list_init (&sleeping_list);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -120,7 +125,7 @@ thread_start (void)
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
 void
-thread_tick (void) 
+thread_tick (int64_t ticks) 
 {
   struct thread *t = thread_current ();
 
@@ -137,6 +142,23 @@ thread_tick (void)
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
+
+  /* P1 update - Move thread back to ready list and 
+     unblock it if finished sleeping. */
+  struct list_elem *e;
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, sleepelem);
+      
+      if (t->wakeup_time > ticks)
+        return;
+      
+      thread_unblock(t);
+      list_remove(e);
+    }
 }
 
 /* Prints thread statistics. */
@@ -462,6 +484,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->wakeup_time = 0;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -582,3 +605,28 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/* P1 update */
+/* add the current thread into sleep list and block it */
+void
+insert_sleeping_list (int64_t ticks)
+{
+  struct thread *cur = thread_current ();
+  cur->wakeup_time = ticks;
+  list_insert_ordered (&sleeping_list, &cur->sleepelem, 
+                       (list_less_func *) &sleep_compare, NULL);
+  thread_block ();
+}
+
+/* P1 update */
+/* compare the wakeup_time of thread a and b ot help sorting
+   when insert to sleeping list*/
+bool
+sleep_compare (const struct list_elem *a,
+               const struct list_elem *b,
+               void *aux UNUSED)
+{
+  struct thread *t = list_entry(a, struct thread, sleepelem);
+  struct thread *p = list_entry(b, struct thread, sleepelem);
+  return t->wakeup_time < p->wakeup_time;
+}
