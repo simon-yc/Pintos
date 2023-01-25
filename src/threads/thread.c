@@ -153,7 +153,7 @@ thread_tick (int64_t ticks)
     {
       struct thread *t = list_entry (e, struct thread, sleepelem);
       
-      if (t->wakeup_time < ticks)
+      if (t->wakeup_time > ticks)
         return;
       
       thread_unblock(t);
@@ -626,5 +626,7 @@ sleep_compare (const struct list_elem *a,
                const struct list_elem *b,
                void *aux)
 {
-  return list_entry(a, struct thread, elem)->wakeup_time < list_entry(b, struct thread, elem)->wakeup_time;
+  struct thread *t = list_entry(a, struct thread, sleepelem);
+  struct thread *p = list_entry(b, struct thread, sleepelem);
+  return t->wakeup_time < p->wakeup_time;
 }
