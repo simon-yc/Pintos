@@ -89,7 +89,7 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  /* P1 update */
+  /* P1 update update timer_sleep to avoid busy wait*/
   if (ticks > 0)
     {
       ASSERT (intr_get_level () == INTR_ON);

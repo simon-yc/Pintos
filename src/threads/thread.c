@@ -143,7 +143,9 @@ thread_tick (void)
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
 
-  /* P1 update */
+  /* P1 update - update sleep_remaining of threads in the 
+     sleeping list. Move thread back to ready list if 
+     finished sleeping. */
   struct list_elem *e;
   ASSERT (intr_get_level () == INTR_OFF);
 
@@ -612,11 +614,12 @@ allocate_tid (void)
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 /* P1 update */
+/* add the current thread into sleep list and block it */
 void
 insert_sleeping_list (int64_t ticks)
 {
   struct thread *cur = thread_current ();
   cur->sleep_remaining = ticks;
-  list_push_front (&sleeping_list, &cur->sleepelem);
+  list_push_back (&sleeping_list, &cur->sleepelem);
   thread_block ();
 }
