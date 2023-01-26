@@ -143,8 +143,7 @@ thread_tick (int64_t ticks)
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
 
-  /* P1 update - Move thread back to ready list and 
-     unblock it if finished sleeping. */
+  /* P1 update - Move thread to ready list & unblock wakeup_time <= ticks. */
   struct list_elem *e;
   ASSERT (intr_get_level () == INTR_OFF);
 

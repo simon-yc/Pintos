@@ -21,8 +21,8 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
 
-                 ALARM CLOCK
-                 ===========
+                                 ALARM CLOCK
+                                 ===========
 
 ---- DATA STRUCTURES ----
 
@@ -32,11 +32,20 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 
 Added to struct thread:
 
-    int64_t wakeup_time;   
-
-    /* Thread wakeup time. Initialized to 0.
-    We need each thread to keep track of its wakeup time */
+    /* Initialized to 0. Each thread keeps track of its wakeup time */
     
+    int64_t wakeup_time;
+
+Added static struct list:
+
+    /* List of sleeping threads sorted in ascending order of wakeup time */
+
+    static struct list sleeping_list;   /* List of sleeping threads */
+
+Added struct list_elem:
+
+    struct list_elem sleepelem;         /* List element for sleeping threads. */
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
@@ -45,24 +54,39 @@ Added to struct thread:
 Originally, timer-sleep() used busy wait. This never puts the thread 
 to sleep, rather, the current thread is in a while loop and simply
 gets pushed to the back of the ready queue. This is a waste of resources
-to have this constantly running. Each time the interrupt handler runs, 
-the variable ticks is increased by 1.
+to have this constantly running.
 
 In our new implementation, we make it more efficient by blocking it 
 until the thread's sleeping time finishes. This way, we save valuable
 CPU storage. Every time the timer interrupt handler runs, the global 
 variable ticks increases by 1, it also checks each thread and decrease 
-the wakeup_time of each sleeping thread by 1. If wakeup_time of 
-the thread is reduced to 0, move the thread back to the ready list by 
-unblocking it.
+the wakeup_time of each sleeping thread by 1. If wakeup_time of the thread 
+is less than or equal to the global variable ticks, then move the thread back 
+to the ready list by unblocking it.
+
+To outline to the steps:
+
+In a call to timer_sleep()
+1. check if the ticks non-negative
+2. disable interrupt
+3. call insert_sleeping_list
+    a. insert the thread into the sleeping list
+    b. block the thread
+4. enable interrupt
+ 
+In a call to timer interrupt handler
+1. increment global variable ticks
+2. call thread_tick
+    a. iterate through sleeping list, remove and unblock threads that
+       have wakeup_time <= ticks
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
 
 We create a list for sleeping threads in thread.c to keep track of all 
 the threads that are currently in sleep. Each time we want to check if any
-threads needs to wake up (and get moved to the ready list), we can simply
-iterate through the sleeping list. This is more efficient because we only
+threads needs to wake up (and  moved to the ready list), we can simply iterate 
+through the sleeping list. This is more efficient because we only
 need to check the threads that are sleeping, rather than all of the threads.
 Furthermore, we keep the sleeping list in ascending order of wake time, so
 that we can stop checking once we encounter a thread with greater wake up time
@@ -75,13 +99,24 @@ minimal amount of checks to wake up threads.
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
+Race conditions are avoided because we disable interrupts
+
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
+
+Race conditions are avoided because we disable interrupts
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+We chose this design because it is much more efficient than the original. We
+had considered using a sleeping list with each thread keeping track of its
+remaining sleeping time. However, this would require us to iterate through
+the sleeping list every time the timer interrupt handler runs, which would
+be inefficient. Our design is superior because we only need to iterate through
+the sleeping list for the threads that need to wake up.
 
              PRIORITY SCHEDULING
              ===================
