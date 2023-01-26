@@ -370,15 +370,25 @@ thread_foreach (thread_action_func *func, void *aux)
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
+/* P1 update */
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  enum intr_level old_level = intr_disable ();
+  struct thread *cur = thread_current ();
+  cur->ori_priority = new_priority;
 
-  /* P1 update - After updating the priority, yield to
-     allow the highest priority thread run if current thread
-     is no longer the highest. */
-  thread_yield ();
+  if (list_empty (&cur->locks_holding) || new_priority > cur->priority)
+    {
+      cur->priority = new_priority; /* Only update the actual priority 
+                                       if thread is not holding any locks 
+                                       or the new priority is higher */
+      /* After updating the priority, yield to
+         allow the highest priority thread run if current thread
+         is no longer the highest. */
+      thread_yield ();
+    }
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -509,11 +519,17 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
-  /* P1 update - insert the current thread to the ready list so
+  /* P1 update */
+  /* insert the current thread to the ready list so
      the list is sorted by priority */
   list_insert_ordered (&all_list, &t->allelem, 
                        (list_less_func *) &thread_priority_less, 
                        NULL); 
+
+  t->ori_priority = priority;    /* set ori_priority */
+  list_init (&t->locks_holding); /* initialize t's lock_holding list */
+  t->lock = NULL;                /* initialize t's lock */
+
   intr_set_level (old_level);
 }
 
@@ -667,4 +683,31 @@ thread_priority_less (const struct list_elem *thread_a,
   int priority_a = list_entry(thread_a, struct thread, elem)->priority;
   int priority_b = list_entry(thread_b, struct thread, elem)->priority;
   return priority_a > priority_b;
+}
+
+/* P1 update */
+/* Being called when the thread t's lock_holding list or its lock changed. */
+void
+thread_priority_update (struct thread *t)
+{
+  enum intr_level old_level = intr_disable ();
+  int new_priority = t->ori_priority;
+  if (!list_empty (&t->locks_holding))
+    {
+      list_sort (&t->locks_holding, lock_priority_less, NULL);
+      int donation_priority = list_entry (list_front (&t->locks_holding),
+                                          struct lock, 
+                                          lock_elem)->max_priority;
+      if (donation_priority > new_priority)
+        new_priority = donation_priority;
+    }
+  t->priority = new_priority;
+
+  if (t->status == THREAD_READY)
+    {
+      /* resort the ready list b/c t's priority may have changed */
+      list_sort (&ready_list, thread_priority_less, NULL);
+    }
+
+  intr_set_level (old_level);
 }

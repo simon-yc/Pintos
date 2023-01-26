@@ -104,6 +104,10 @@ struct thread
     /* P1 update */  
     struct list_elem sleepelem;         /* List element for sleeping
 	                                        threads. */
+    int ori_priority;                   /* Thread's original priority */
+    struct list locks_holding;          /* List of locks the thread is holding. */
+    struct lock *lock;                  /* The lock that the thread is trying to 
+                                           acquire. */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -146,10 +150,11 @@ int thread_get_load_avg (void);
 void insert_sleeping_list (int64_t);
 void thread_update_sleeping_list(void);
 bool thread_update_remaining_sleep(struct thread *);
-bool sleep_compare (const struct list_elem *a,
-                    const struct list_elem *b,
-                    void *aux UNUSED);
-bool thread_priority_less (const struct list_elem *thread_a, 
-                           const struct list_elem *thread_b, 
-                           void *aux UNUSED);
+bool sleep_compare (const struct list_elem *,
+                    const struct list_elem *,
+                    void * UNUSED);
+bool thread_priority_less (const struct list_elem *, 
+                           const struct list_elem *, 
+                           void * UNUSED);
+void thread_priority_update (struct thread *);
 #endif /* threads/thread.h */
