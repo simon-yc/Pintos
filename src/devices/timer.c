@@ -84,19 +84,20 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-/* P1 update - Sleeps for approximately TICKS timer sleep_ticks.  Interrupts must
-   be turned on. */
+/* P1 update - Sleeps for approximately TICKS timer sleep_ticks.
+Interrupts must be turned on. */
 void
 timer_sleep (int64_t sleep_ticks) 
 {
   /* P1 update update timer_sleep to avoid busy wait*/
-  if (sleep_ticks > 0)
-    {
-      ASSERT (intr_get_level () == INTR_ON);
-      enum intr_level old_level = intr_disable ();
-      insert_sleeping_list (ticks + sleep_ticks);
-      intr_set_level (old_level);   
-    }
+  
+  if (sleep_ticks <= 0)
+    return;
+
+  ASSERT (intr_get_level () == INTR_ON);
+  enum intr_level old_level = intr_disable ();
+  insert_sleeping_list (ticks + sleep_ticks);
+  intr_set_level (old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
