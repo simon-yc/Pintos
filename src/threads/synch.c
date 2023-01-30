@@ -208,7 +208,7 @@ lock_acquire (struct lock *lock)
   /* P1 update */
   struct thread *cur = thread_current ();
   /* If lock is currently held by another thread: */
-  if (lock->holder != NULL) 
+  if (lock->holder != NULL && !thread_mlfqs) 
     {
       cur->lock = lock;  /* Current thread is locked by this lock*/
 
@@ -228,21 +228,23 @@ lock_acquire (struct lock *lock)
 
   /* Thread can acquire the lock now */
   sema_down (&lock->semaphore);
-
   enum intr_level old_level = intr_disable ();
   cur = thread_current ();
-  cur->lock = NULL;   /* remove lock from current thread's waiting list */
-  lock->max_priority = cur->priority;
-  
-  /* Insert the lock into thread's holding list in order, so it is easy to 
-     get the max priority of all locks the thread is holding. */
-  list_insert_ordered (&cur->locks_holding, &lock->lock_elem, 
-                       (list_less_func *) &lock_priority_less, NULL);
-  /* Update the holder's priority if needed*/
-  if (lock->max_priority > cur->priority)
+  if (!thread_mlfqs)
     {
-      cur->priority = lock->max_priority;
-      thread_yield ();
+      cur->lock = NULL;   /* remove lock from current thread's waiting list */
+      lock->max_priority = cur->priority;
+      
+      /* Insert the lock into thread's holding list in order, so it is easy to 
+        get the max priority of all locks the thread is holding. */
+      list_insert_ordered (&cur->locks_holding, &lock->lock_elem, 
+                          (list_less_func *) &lock_priority_less, NULL);
+      /* Update the holder's priority if needed*/
+      if (lock->max_priority > cur->priority)
+        {
+          cur->priority = lock->max_priority;
+          thread_yield ();
+        }
     }
   lock->holder = thread_current ();
   intr_set_level (old_level);
@@ -279,13 +281,16 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  /* P1 update - relaease the lock and update the 
-     thread's priority, as it may been changed by donation */
-  enum intr_level old_level = intr_disable ();
-  list_remove (&lock->lock_elem);
-  thread_priority_update (thread_current ());
-  intr_set_level (old_level);
-
+  /* P1 Update */
+  if (!thread_mlfqs)
+    {
+      /* P1 update - relaease the lock and update the 
+        thread's priority, as it may been changed by donation */
+      enum intr_level old_level = intr_disable ();
+      list_remove (&lock->lock_elem);
+      thread_priority_update (thread_current ());
+      intr_set_level (old_level);
+    }
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
