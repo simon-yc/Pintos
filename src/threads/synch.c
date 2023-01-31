@@ -67,10 +67,10 @@ sema_down (struct semaphore *sema)
 
   old_level = intr_disable ();
   while (sema->value == 0) 
-    {
+  {
       list_push_back (&sema->waiters, &thread_current ()->elem);
       thread_block ();
-    }
+  }
   sema->value--;
   intr_set_level (old_level);
 }
@@ -90,10 +90,10 @@ sema_try_down (struct semaphore *sema)
 
   old_level = intr_disable ();
   if (sema->value > 0) 
-    {
+  {
       sema->value--;
       success = true; 
-    }
+  }
   else
     success = false;
   intr_set_level (old_level);
@@ -114,13 +114,13 @@ sema_up (struct semaphore *sema)
 
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) 
-    {
+  {
       /* P1 update - Sort sema->waiters then unblcok the thread in 
          sema->waiters with the highest priority first */
       list_sort (&sema->waiters, thread_priority_less, NULL);
       struct thread *t = list_entry (list_pop_front (&sema->waiters), struct thread, elem);
       thread_unblock (t);
-    }
+  }
 
   sema->value++;
   intr_set_level (old_level);
@@ -145,10 +145,10 @@ sema_self_test (void)
   sema_init (&sema[1], 0);
   thread_create ("sema-test", PRI_DEFAULT, sema_test_helper, &sema);
   for (i = 0; i < 10; i++) 
-    {
+  {
       sema_up (&sema[0]);
       sema_down (&sema[1]);
-    }
+  }
   printf ("done.\n");
 }
 
@@ -160,10 +160,10 @@ sema_test_helper (void *sema_)
   int i;
 
   for (i = 0; i < 10; i++) 
-    {
+  {
       sema_down (&sema[0]);
       sema_up (&sema[1]);
-    }
+  }
 }
 
 /* Initializes LOCK.  A lock can be held by at most a single
@@ -209,29 +209,28 @@ lock_acquire (struct lock *lock)
   struct thread *cur = thread_current ();
   /* If lock is currently held by another thread: */
   if (lock->holder != NULL && !thread_mlfqs) 
-    {
+  {
       cur->lock = lock;  /* Current thread is locked by this lock*/
 
       /* Priority donate */
       /* Donate to update thread's priority if needed, may be in a chain */
       struct lock *l = lock;
       while (l != NULL && cur->priority > l->max_priority)
-        {
+      {
           if (l->max_priority < cur->priority)
-            {
               l->max_priority = cur->priority;
-            }
+
           thread_priority_update (l->holder);
           l = l->holder->lock;
-        }
-    }
+      }
+  }
 
   /* Thread can acquire the lock now */
   sema_down (&lock->semaphore);
   enum intr_level old_level = intr_disable ();
   cur = thread_current ();
   if (!thread_mlfqs)
-    {
+  {
       cur->lock = NULL;   /* remove lock from current thread's waiting list */
       lock->max_priority = cur->priority;
       
@@ -241,11 +240,11 @@ lock_acquire (struct lock *lock)
                           (list_less_func *) &lock_priority_less, NULL);
       /* Update the holder's priority if needed*/
       if (lock->max_priority > cur->priority)
-        {
+      {
           cur->priority = lock->max_priority;
           thread_yield ();
-        }
-    }
+      }
+  }
   lock->holder = thread_current ();
   intr_set_level (old_level);
 }
@@ -280,17 +279,15 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
-
-  /* P1 Update */
   if (!thread_mlfqs)
-    {
+  {
       /* P1 update - relaease the lock and update the 
         thread's priority, as it may been changed by donation */
       enum intr_level old_level = intr_disable ();
       list_remove (&lock->lock_elem);
       thread_priority_update (thread_current ());
       intr_set_level (old_level);
-    }
+  }
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
@@ -377,13 +374,13 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (lock_held_by_current_thread (lock));
 
   if (!list_empty (&cond->waiters)) 
-    {
+  {
       /* P1 update - sort cond->waiters so thread with highest 
          priority in the list can be popped */
       list_sort (&cond->waiters, cond_priority_less, NULL);
       sema_up (&list_entry (list_pop_front (&cond->waiters),
                           struct semaphore_elem, elem)->semaphore);
-    }
+  }
     
 }
 
