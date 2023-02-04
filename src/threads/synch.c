@@ -237,12 +237,6 @@ lock_acquire (struct lock *lock)
         get the max priority of all locks the thread is holding. */
       list_insert_ordered (&cur->locks_holding, &lock->lock_elem, 
                           (list_less_func *) &lock_priority_less, NULL);
-      /* Update the holder's priority if needed*/
-      if (lock->max_priority > cur->priority)
-      {
-          cur->priority = lock->max_priority;
-          thread_yield ();
-      }
   }
   lock->holder = thread_current ();
   intr_set_level (old_level);
