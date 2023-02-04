@@ -208,7 +208,7 @@ lock_acquire (struct lock *lock)
   /* P1 update */
   struct thread *cur = thread_current ();
   /* If lock is currently held by another thread: */
-  if (lock->holder != NULL && !thread_mlfqs) 
+  if (lock->holder != NULL) 
   {
       cur->lock = lock;  /* Current thread is locked by this lock*/
 
@@ -217,8 +217,7 @@ lock_acquire (struct lock *lock)
       struct lock *l = lock;
       while (l != NULL && cur->priority > l->max_priority)
       {
-          if (l->max_priority < cur->priority)
-              l->max_priority = cur->priority;
+          l->max_priority = cur->priority;
 
           thread_priority_update (l->holder);
           l = l->holder->lock;
