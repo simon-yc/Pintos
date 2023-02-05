@@ -234,10 +234,10 @@ lock_acquire (struct lock *lock)
       cur->lock = NULL;   /* remove lock from current thread's waiting list */
       lock->max_priority = cur->priority;
       
-      /* Insert the lock into thread's holding list in order, so it is easy to 
+      /* Insert the lock into thread's holding list in order, so it is easy to
         get the max priority of all locks the thread is holding. */
       list_insert_ordered (&cur->locks_holding, &lock->lock_elem, 
-                          (list_less_func *) &lock_priority_less, NULL);
+                           (list_less_func *) &lock_priority_less, NULL);
     }
   lock->holder = thread_current ();
   intr_set_level (old_level);
@@ -276,7 +276,7 @@ lock_release (struct lock *lock)
   if (!thread_mlfqs)
     {
       /* P1 update - relaease the lock and update the 
-        thread's priority, as it may been changed by donation */
+         thread's priority, as it may been changed by donation */
       enum intr_level old_level = intr_disable ();
       list_remove (&lock->lock_elem);
       thread_priority_update (thread_current ());
@@ -373,9 +373,8 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
          priority in the list can be popped */
       list_sort (&cond->waiters, cond_priority_less, NULL);
       sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
-    }
-    
+                            struct semaphore_elem, elem)->semaphore);
+    } 
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by

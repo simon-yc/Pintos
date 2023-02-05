@@ -84,8 +84,8 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-/* P1 update - Sleeps for approximately TICKS timer sleep_ticks.
-Interrupts must be turned on. */
+/* Sleeps for approximately TICKS timer sleep_ticks.
+   Interrupts must be turned on. */
 void
 timer_sleep (int64_t sleep_ticks) 
 {
@@ -174,7 +174,7 @@ timer_print_stats (void)
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
-  ticks++;  
+  ticks++;
   thread_tick (ticks);
 }
 
