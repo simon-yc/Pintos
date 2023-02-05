@@ -109,7 +109,7 @@ struct thread
     struct lock *lock;                  /* The lock that the thread is trying to 
                                            acquire. */
     int nice;                           /* Thread niceness */
-    int32_t recent_cpu;                      /* CPU time thread has recently.*/
+    int32_t recent_cpu;                 /* CPU time thread has recently.*/
   };
 
 /* If false (default), use round-robin scheduler.
