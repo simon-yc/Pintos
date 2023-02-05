@@ -44,7 +44,7 @@ Added static struct list:
 
 Added to struct thread:
 
-    struct list_elem sleepelem;         /* List element for sleeping threads. */
+    struct list_elem sleepelem;  /* List element for sleeping threads. */
 
 ---- ALGORITHMS ----
 
@@ -58,11 +58,13 @@ to have this constantly running.
 
 In our new implementation, we make it more efficient by blocking it 
 until the thread's sleeping time finishes. This way, we save valuable
-CPU storage. Every time the timer interrupt handler runs, the global 
-variable ticks increases by 1, it also checks each thread and decrease 
-the wakeup_time of each sleeping thread by 1. If wakeup_time of the thread 
-is less than or equal to the global variable ticks, then move the thread back 
-to the ready list by unblocking it.
+CPU storage. 
+
+Originally every time the timer interrupt handler runs, the global 
+variable ticks increases by 1. We implemented so each time it also 
+checks each thread and decrease the wakeup_time of each sleeping thread 
+by 1. If wakeup_time of the thread is less than or equal to the global 
+variable ticks, then move the thread back to the ready list by unblocking it.
 
 To outline to the steps:
 
@@ -83,16 +85,24 @@ In a call to timer interrupt handler
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
 
-We create a list for sleeping threads in thread.c to keep track of all 
-the threads that are currently in sleep. Each time we want to check if any
-threads needs to wake up (and  moved to the ready list), we can simply iterate 
-through the sleeping list. This is more efficient because we only
-need to check the threads that are sleeping, rather than all of the threads.
-Furthermore, we keep the sleeping list in ascending order of wake time, so
-that we can stop checking once we encounter a thread with greater wake up time
-than current ticks. This minimizes the time spent in the timer interrupt handler
-because we only deal with the sleeping thread and we only need to perform a 
-minimal amount of checks to wake up threads.
+The following steps minimize the amount of time spent in the timer interrupt
+handler:
+
+1. Implementing a sleeping_list: 
+   This minimizes the amount of time spent in the interrupt handler because 
+   we are able to keep track of all the sleeping threads, instead of checking
+   every one of the existing threads.
+
+2. Added wakeup_time field in sleeping_list:
+   We added a wakeup_time field to the thread struct to keep track of each 
+   thread's wake up time instead of their remaining sleep time. This avoids 
+   updating each thread every time a tick goes up by one. Rather, now we only
+   need to unblock the thread once their wake up time is reached.
+
+3. Keeping the sleeping_list sorted:
+   This minimizes the amount of time spent in the interrupt handler because
+   we do a minimal number of checks to see which threads need to be woken up,
+   rather than checking every single thread in the sleeping_list.
 
 ---- SYNCHRONIZATION ----
 
@@ -100,15 +110,15 @@ minimal amount of checks to wake up threads.
 >> timer_sleep() simultaneously?
 
 Race conditions are avoided by temporarily disabling interrupts. Our algorithm 
-diable interrputs before call insert_sleeping_list(). When multiple threads call 
-timer_sleep() simultaneously, only one thread can access the sleeping_list, so
-no two threads  can modify sleeping_list the same time. 
+disable interrupts before call insert_sleeping_list(). When multiple threads 
+call timer_sleep() simultaneously, only one thread can access the 
+sleeping_list, so no two threads can modify sleeping_list the same time.
 
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
 
-Race conditions are avoided by temporarily disabling interrupts. Our 
-algorithm saves wake up time in sleeping_list, each time defore we call 
+Race conditions are avoided by temporarily disabling interrupts. Our algorithm
+saves wake up time in sleeping_list, each time before we call 
 insert_sleeping_list() in timer_sleep(), we disable interrupts, so no time 
 interrupt can occur during insert_sleeping_list(). Wake up time can be 
 correctly stored into sleeping_list.
@@ -118,12 +128,15 @@ correctly stored into sleeping_list.
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
 
-We chose this design because it is much more efficient than the original. We
-had considered using a sleeping list with each thread keeping track of its
-remaining sleeping time. However, this would require us to iterate through
-the sleeping list every time the timer interrupt handler runs, which would
-be inefficient. Our design is superior because we only need to iterate through
-the sleeping list for the threads that need to wake up.
+We chose this design because it is much more efficient than the original. 
+Wehad considered using a sleeping list with each thread keeping track of 
+itsremaining sleeping time. However, this would require us to iterate 
+throughthe sleeping list every time the timer interrupt handler runs, which 
+would be inefficient. Our design is superior because we only need to iterate 
+throughthe sleeping list for the threads that need to wake up. Since the 
+sleeping_list is sorted, we only do a minimal amount of checks. When we 
+iterate through, once we encounter a thread that does not need to be woken up,
+we can stop checking.
 
              PRIORITY SCHEDULING
              ===================
@@ -137,14 +150,14 @@ the sleeping list for the threads that need to wake up.
 Added to struct thread:
 
    /* Will hold thread's original priority, so after the priority 
-      donation finishes, thread is able to get back its actual 
+      donation finishes, thread is able to get back its original 
       priority. */
     int ori_priority;
 
-    /* Keep tract of the list of locks the thread is holding. */
+    /* Keep track of the list of locks the thread is holding. */
     struct list locks_holding;
 
-    /* The lock that the thread is trying to acquire, or the lock 
+    /* The lock that the thread is trying to acquire, i.e, the lock 
        that locks the thread */
     struct lock *lock;
 
@@ -163,73 +176,235 @@ Added to struct lock:
 The data structure that we used to track priority donation are extra fields
 we added to the thread and lock structs.
 
-In the thread struct, we added 
-ori_priority to keep track of the original threads priority in the case that
-the thread inherits the priority of another thread. We also have each thread
-keep track of the lock it is trying to acquire. In other words, the lock that
-the thread is waiting for. Finally, each thread maintains locks_holding which
-as the name suggests, is a list of the locks that the thread is holding.
+In the thread struct, we added ori_priority to keep track of the original 
+threads priority in the case that the thread inherits the priority of another 
+thread. We also have each thread keep track of the lock it is trying to 
+acquire. In other words, the lock that the thread is waiting for. Finally,
+each thread maintains locks_holding which as the name suggests, is a list 
+of the locks that the thread is holding, and this will help keeping track of the 
+priority donation since during priority donation, the thread will get donated 
+to by the thread waiting for the locks inside the list of locks that this thread 
+is holding.
 
-In the lock struct, we added
-lock_elem is a list_elem for the list locks_holding that each thread has. To 
-keep track of the maximum priority of the out of all the threads that want 
-to acquire this lock.
+In the lock struct, we added lock_elem is a list_elem for the list 
+locks_holding that each thread has. To keep track of the maximum priority 
+of the out of all the threads that want to acquire this lock.
 
-thread A lock thread B t
+Here is an example of nested nonation:
+
+Steps:
+1. initialize lock A,B Thread 1,2,3
+2. thread 1: acquire lock A
+3. thread 2: acquire lock B, acquire lock A
+4. thread 3: acquire lock B
+5. thread 1: release lock A
+6. thread 2: release lock B
+7. thread 2: release lock A, thread 3: release lock B
+
+------------------------Step 1-----------------------
+initialize lock A,B Thread 1,2,3
+
++---------------+-------+---+---------------+-------+
+|           Lock A      |   |          Lock B       |
++---------------+-------+---+---------------+-------+
+| holder        | null  |   | holder        | null  |
+| sem_waiter    | null  |   | sem_waiter    | null  |
+| max_priority  | 0     |   | max_priority  | 0     |
++---------------+-------+---+---------------+-------+
+
++---------------+---------+---------------+--------+---------------+--------+
+|         Thread 1        |          Thread 2      |         Thread 3       |
++---------------+---------+---------------+--------+---------------+--------+
+| priority      | 15      | priority      | 20     | priority      | 30     |
+| ori_priority  | 15      | ori_priority  | 20     | ori_priority  | 30     |
+| locks_holding | null    | locks_holding | null   | locks_holding | null   |
+| lock          | null    | lock          | null   | lock          | null   |
++---------------+---------+---------------+--------+---------------+--------+
+
+------------------------Step 2-----------------------
+thread 1: acquire lock A
+
++---------------+-------+---+---------------+-------+
+|           Lock A      |   |          Lock B       |
++---------------+-------+---+---------------+-------+
+| holder        | t1    |   | holder        | null  |
+| sem_waiter    | null  |   | sem_waiter    | null  |
+| max_priority  | 15    |   | max_priority  | 0     |
++---------------+-------+---+---------------+-------+
+
++---------------+---------+---------------+--------+---------------+--------+
+|         Thread 1        |          Thread 2      |         Thread 3       |
++---------------+---------+---------------+--------+---------------+--------+
+| priority      | 15      | priority      | 20     | priority      | 30     |
+| ori_priority  | 15      | ori_priority  | 20     | ori_priority  | 30     |
+| locks_holding | {A}     | locks_holding | null   | locks_holding | null   |
+| lock          | null    | lock          | null   | lock          | null   |
++---------------+---------+---------------+--------+---------------+--------+
+
+------------------------Step 3-----------------------
+thread 2: acquire lock B, acquire lock A
+
+Note: lock A is currently being held by thread 1
+
++---------------+-------+---+---------------+-------+
+|           Lock A      |   |          Lock B       |
++---------------+-------+---+---------------+-------+
+| holder        | t1    |   | holder        | t2    |
+| sem_waiter    | {t2}  |   | sem_waiter    | null  |
+| max_priority  | 20    |   | max_priority  | 20    |
++---------------+-------+---+---------------+-------+
+
++---------------+---------+---------------+--------+---------------+--------+
+|         Thread 1        |          Thread 2      |         Thread 3       |
++---------------+---------+---------------+--------+---------------+--------+
+| priority      | 20      | priority      | 20     | priority      | 30     |
+| ori_priority  | 15      | ori_priority  | 20     | ori_priority  | 30     |
+| locks_holding | {A}     | locks_holding | {B}    | locks_holding | null   |
+| lock          | null    | lock          | A      | lock          | null   |
++---------------+---------+---------------+--------+---------------+--------+
+
+------------------------Step 4-----------------------
+thread 3: acquire lock B
+
++---------------+-------+---+---------------+-------+
+|           Lock A      |   |          Lock B       |
++---------------+-------+---+---------------+-------+
+| holder        | t1    |   | holder        | t2    |
+| sem_waiter    | {t2}  |   | sem_waiter    | {t3}  |
+| max_priority  | 30    |   | max_priority  | 30    |
++---------------+-------+---+---------------+-------+
+
++---------------+---------+---------------+--------+---------------+--------+
+|         Thread 1        |          Thread 2      |         Thread 3       |
++---------------+---------+---------------+--------+---------------+--------+
+| priority      | 30      | priority      | 30     | priority      | 30     |
+| ori_priority  | 15      | ori_priority  | 20     | ori_priority  | 30     |
+| locks_holding | {A}     | locks_holding | {B}    | locks_holding | null   |
+| lock          | null    | lock          | A      | lock          | B      |
++---------------+---------+---------------+--------+---------------+--------+
+
+------------------------Step 5-----------------------
+thread 1: release lock A
+
++---------------+-------+---+---------------+-------+
+|           Lock A      |   |          Lock B       |
++---------------+-------+---+---------------+-------+
+| holder        | t2    |   | holder        | t2    |
+| sem_waiter    | null  |   | sem_waiter    | {t3}  |
+| max_priority  | 20    |   | max_priority  | 30    |
++---------------+-------+---+---------------+-------+
+
++---------------+---------+---------------+--------+---------------+--------+
+|         Thread 1        |          Thread 2      |         Thread 3       |
++---------------+---------+---------------+--------+---------------+--------+
+| priority      | 15      | priority      | 30     | priority      | 30     |
+| ori_priority  | 15      | ori_priority  | 20     | ori_priority  | 30     |
+| locks_holding | null    | locks_holding | {B, A} | locks_holding | null   |
+| lock          | null    | lock          | null   | lock          | B      |
++---------------+---------+---------------+--------+---------------+--------+
+
+------------------------Step 6-----------------------
+thread 2: release lock B
+
++---------------+-------+---+---------------+-------+
+|           Lock A      |   |          Lock B       |
++---------------+-------+---+---------------+-------+
+| holder        | t2    |   | holder        | t3    |
+| sem_waiter    | null  |   | sem_waiter    | null  |
+| max_priority  | 20    |   | max_priority  | 30    |
++---------------+-------+---+---------------+-------+
+
++---------------+---------+---------------+--------+---------------+--------+
+|         Thread 1        |          Thread 2      |         Thread 3       |
++---------------+---------+---------------+--------+---------------+--------+
+| priority      | 15      | priority      | 20     | priority      | 30     |
+| ori_priority  | 15      | ori_priority  | 20     | ori_priority  | 30     |
+| locks_holding | null    | locks_holding | {A}    | locks_holding | {B}    |
+| lock          | null    | lock          | null   | lock          | null   |
++---------------+---------+---------------+--------+---------------+--------+
+
+------------------------Step 7-----------------------
+thread 2: release lock A
+thread 3: release lock B
+
++---------------+-------+---+---------------+-------+
+|           Lock A      |   |          Lock B       |
++---------------+-------+---+---------------+-------+
+| holder        | null  |   | holder        | null  |
+| sem_waiter    | null  |   | sem_waiter    | null  |
+| max_priority  | 0     |   | max_priority  | 0     |
++---------------+-------+---+---------------+-------+
+
++---------------+---------+---------------+--------+---------------+--------+
+|         Thread 1        |          Thread 2      |         Thread 3       |
++---------------+---------+---------------+--------+---------------+--------+
+| priority      | 15      | priority      | 20     | priority      | 30     |
+| ori_priority  | 15      | ori_priority  | 20     | ori_priority  | 30     |
+| locks_holding | null    | locks_holding | null   | locks_holding | null   |
+| lock          | null    | lock          | null   | lock          | null   |
++---------------+---------+---------------+--------+---------------+--------+
 
 ---- ALGORITHMS ----
 
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
+
 Threads waiting for a lock, semaphore, or condition variable will wake up once 
 the lock is released. When the lock is released, the semaphore will go up. By 
-our implementation, everytime as semaphore goes up, it will sort its waiters list 
-so the first thread has the highest priority among all the waiters. Therefore, 
-each time the semaphore is released, as our implementation choosees to unblock 
-the first thread in the waiters list, the highest priority thread waiting will 
-be wake up first, as wanted.
+our implementation, everytime as semaphore goes up, it will sort its waiters 
+list so the first thread has the highest priority among all the waiters. 
+Therefore, each time the semaphore is released, as our implementation chooses 
+to unblock the first thread in the waiters list, the highest priority thread 
+waiting will be wake up first, as wanted.
 
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
-1. Go to step 6 if currently there is not a holder for the lock. 
+
+1. Go to step 6(function sema_down) if currently there is not a holder for the lock. 
    Else if there is a holder for the lock:
 2. Set the thread's lock to this lock so it is locked by this lock. 
-3. If the current thread has a higher priority than the highest priority among 
-   all other threads holding this lock, set this lock's maximum priority to 
-   current thread's priority. 
+3. If the current thread has a higher priority than the highest priority 
+   among all other threads holding this lock, set this lock's maximum
+   priority to current thread's priority.
 4. Do priority donation to the lock's holder thread H so it can run first: 
    4.1. Get the max priority between the H's original priority and the 
-        highest priority among all threads that are locked by locks that H holds 
-        (which includes current thread's priority since the it is currently locked 
-        by locks that H holds). 
+        highest priority among all threads that are locked by locks that H 
+        holds (which includes current thread's priority since the it 
+        is currently locked by locks that H holds).
    4.2. Set H's priority to the above max priority. 
-   4.3. As H should now have a higher priority, sort the ready list so H can get run. 
-5. Let the l be the lock that is locking the holder thread if there exist such l, then 
-   go back to step 3. If such l does not exist, go to step 6
-6. While the semaphore value is 0, add the current thread to the lock's waiters and 
-   block it. 
-7. Once the semaphore value is not 0, decrease it by one. 
-8. Now the current thread should hold this lock. Turn off the interruption.
-9. Set the lock's max priority to current thread's priority. 
-10. Add the lock to the locks holding list of the current thread in descending order 
-    of each lock's max priority. 
-11. 
+   4.3. As H should now have a higher priority, sort the ready list so H can
+        get run. 
+5. Let the l be the lock that is locking the holder thread if there exist 
+   such l, then go back to step 3. If such l does not exist, go to step 6
+6. Fuction sema_down()
+   6.1 Disable interuption. 
+   6.2 While the semaphore value is 0, add the current thread to the lock's 
+   waiters and block it. 
+   6.3 Once the semaphore value is not 0, decrease it by one. 
+   6.4 Now the current thread should hold this lock. Turn off the interruption.
+7. Disable interruption
+8. Set the lock's max priority to current thread's priority. 
+9. Add the lock to the locks holding list of the current thread in descending
+    order of each lock's max priority. 
+10. Set the current thread to be the lock's holder. 
+11. Turn on the interruption.
 
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
-1. If thread is mlfqs, go to step 5 else:
-2. Turn off the interruption while updating the lock and its holder, remove the 
-   lock elements from the lock_holding list of the thread that is holding it.
+2. Turn off the interruption while updating the lock and its holder, delete 
+   all elements in the lock_holding list of the thread. Which unlocks all
+   the thread that is previously locked by this lock.
 3. Update the old lock holder thread's priority as it just released a lock.
 4. Turn on the interruption.
 5. Set the lock's new holder to NULL.
-6. Turn off the interruption.
-7. If the list of waiters is not empty, sort the list of waiters in descending 
-   order of their priority. Pop out from this list and unblock the thread with 
-   the highest priority. 
-8. Increase the semaphore value by one, and turn on the interruption
-9. Run thread yield to allow the highest priority thread run, as some thread's 
-   priority may have been changed after this lock got released.
+6. Function sema_up:
+   6.1: Turn off the interruption.
+   6.2: If the list of waiters is not empty, sort the list of waiters in 
+   descending order of their priority. Pop out from this list and unblock the 
+   thread with the highest priority. 
+   6.3: Increase the semaphore value by one, and turn on the interruption
+   6.4 Run thread yield to allow the highest priority thread run, as some 
+   thread's priority may have been changed after this lock got released.
 
 ---- SYNCHRONIZATION ----
 
@@ -237,12 +412,16 @@ be wake up first, as wanted.
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
-Suppose thread A has priorty 5 called thread_set_priority(). Now its just 
-before the line to set its own priority to 10, and thread switching happens.
-There is another thread B with priority 20 who just got locked by thread A so 
-it will donate its priority to thread A. This thread B updated thread A's
-priority to 20. Now thread switching happens again, thread A set its priorty
-to 10 which is incorrect.
+Suppose thread A has priority 5 and hold lock A. Thread B has priority 20. 
+- Thread A calls thread_set_priority() to set its priority to 10. 
+- Right before the line to set thread A's priority to 10, thread B got locked 
+  by lock A so it tries to donate its priority to thread A. 
+- Thread B updated thread A's priority to 20.
+- After thread switching happens, thread A set its priorty to 10 which is 
+  incorrect, because its new priority should be 20 as now the priority it 
+  got donated is 20 which is higher than 10. However, at this time, thread 
+  A does not know this as the thread_set_priority process started before 
+  thread A's priority got donated.
 
 Our implementation disabled interrput in thread_set_priority(), so no thread
 switching can happen during thread_set_priority(). This race condition is 
@@ -257,25 +436,6 @@ thread A's priority.
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
 
-In the Pintos operating system, the priority scheduling design was chosen 
-because it is a simple and effective way to manage the scheduling of threads. 
-The design prioritizes threads based on their priority, giving higher-priority 
-threads preference over lower-priority threads. This ensures that important 
-tasks are executed quickly, reducing the risk of starvation for high-priority 
-threads.One advantage of this design is that it is easy to understand and 
-implement. The priority scheduling algorithm is straightforward and does not 
-require complex calculations or data structures. This makes it easier to 
-maintain and debug the scheduling code.Another advantage of priority 
-scheduling is that it is more predictable and deterministic than other 
-scheduling algorithms. The priority of each thread is well-defined, and the 
-scheduling order is determined by the priority of each thread. This makes it 
-easier to debug and diagnose performance issues, as the order of execution is 
-known in advance.It is possible that another design, such as a round-robin 
-scheduling algorithm, could be superior in some situations. For example, round-
-robin scheduling can help ensure that each thread gets a fair share of CPU 
-time, even if some threads have a lower priority. However, in a Pintos system 
-with relatively simple scheduling requirements, priority scheduling is likely 
-to be the most appropriate design choice.
 
               ADVANCED SCHEDULER
               ==================
@@ -286,7 +446,16 @@ to be the most appropriate design choice.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+Added static struct list:
+   /* Thread niceness value */
+   int nice;      
 
+   /* CPU time thread has recently. */                
+   int32_t recent_cpu; 
+
+/* A global variable that keeps track of load_avg which is a fixed 
+    point number */
+Added static int32_t load_avg
 
 ---- ALGORITHMS ----
 
@@ -298,20 +467,30 @@ to be the most appropriate design choice.
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0
- 4
- 8
-12
-16
-20
-24
-28
-32
-36
+ 0     0   0   0   63  61  59   A
+ 4     4   0   0   62  61  59   A
+ 8     8   0   0   61  61  59   B
+12     8   4   0   61  60  59   A
+16     12  4   0   60  60  59   B
+20     12  8   0   60  59  59   A
+24     16  8   0   59  59  59   C
+28     16  8   4   59  59  58   B
+32     16  12  4   59  58  58   A
+36     20  12  4   58  58  58   C
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
+
+The ambiguities will exist when several threads are having the equal 
+priorities. The rule we use to resolve the ambiguities is to choose the
+highest priority thread that has the longest waiting time since it last 
+runs, so it ensures that when this happens, other threads can also get 
+the chance to run. This behavior matches our scheduler as our scheduler 
+will choose to run the thread in the beginning of the ready list. Since
+threads will get add to the end of the ready list each time it becomes ready, 
+then if two threads has the same priority, the one that waited longer should 
+have gotten added to the ready list earlier, then it gets to run first.
 
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
@@ -329,6 +508,9 @@ ticks   A   B   C   A   B   C   to run
 >> abstraction layer for fixed-point math, that is, an abstract data
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
+
+We used the sample provided by the TA regarding fixed point numbers 
+and implemented additional features such as division and subraction.
 
                SURVEY QUESTIONS
                ================
