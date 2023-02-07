@@ -110,7 +110,7 @@ handler:
 >> timer_sleep() simultaneously?
 
 Race conditions are avoided by temporarily disabling interrupts. Our algorithm 
-disable interrupts before call insert_sleeping_list(). When multiple threads 
+disables interrupts before call insert_sleeping_list(). When multiple threads 
 call timer_sleep() simultaneously, only one thread can access the 
 sleeping_list, so no two threads can modify sleeping_list the same time.
 
@@ -129,7 +129,7 @@ correctly stored into sleeping_list.
 >> another design you considered?
 
 We chose this design because it is much more efficient than the original. 
-Wehad considered using a sleeping list with each thread keeping track of 
+We had considered using a sleeping list with each thread keeping track of 
 itsremaining sleeping time. However, this would require us to iterate 
 throughthe sleeping list every time the timer interrupt handler runs, which 
 would be inefficient. Our design is superior because we only need to iterate 
@@ -203,6 +203,11 @@ Steps:
 
 ------------------------Step 1-----------------------
 initialize lock A,B Thread 1,2,3
+- Set each lock's holder and sem_waiter to null as currently no thread is 
+  holding/waiting for the lock. Set each lock's max_priority to 0
+- For each thread, set its ori_priority to the same as its priority. 
+  Initialize each thread's locks_holding and lock to null as currently no 
+  thread is holding/locked by any locks. 
 
 +---------------+-------+---+---------------+-------+
 |           Lock A      |   |          Lock B       |
@@ -223,6 +228,9 @@ initialize lock A,B Thread 1,2,3
 
 ------------------------Step 2-----------------------
 thread 1: acquire lock A
+- Thread 1's locks_holding should contain Lock A now. 
+- Lock A should have holder as t1 and its max_priority = t1's priority, as 
+  no other threads are waiting for lock A. 
 
 +---------------+-------+---+---------------+-------+
 |           Lock A      |   |          Lock B       |
@@ -243,8 +251,13 @@ thread 1: acquire lock A
 
 ------------------------Step 3-----------------------
 thread 2: acquire lock B, acquire lock A
-
 Note: lock A is currently being held by thread 1
+- After t2 acquire lock B, its locks_holding should contain Lock B and lock B 
+  should have its holder as t2 and its max_priority = t2s priority
+- When t2 tries to acquire lock A, as lock A is currently held by t1, t2 will 
+  be added to lock A's waiter list. Since t2 has a higher priority than t1, it
+  will also update lock A's max_priority to 20, as well as donate its priority
+  to t1. 
 
 +---------------+-------+---+---------------+-------+
 |           Lock A      |   |          Lock B       |
@@ -265,6 +278,12 @@ Note: lock A is currently being held by thread 1
 
 ------------------------Step 4-----------------------
 thread 3: acquire lock B
+- When t3 tries to acquire lock B, as lock B is currently held by t2, t3 will 
+  be added to lock B's waiter list. Since t3 has a higher priority than t2, it
+  will also update lock B's max_priority to 30, as well as donate its priority
+  to t2. 
+- Because lock A is locking t2, thread 3 will also update lock A's max_priority
+  to 30, as well as donate its priority to t1, which is the holder of lock A. 
 
 +---------------+-------+---+---------------+-------+
 |           Lock A      |   |          Lock B       |
@@ -285,6 +304,13 @@ thread 3: acquire lock B
 
 ------------------------Step 5-----------------------
 thread 1: release lock A
+- t1 releasing lock A will allow t1 to hold lock A. At the same time, as t1 is
+  no longer the holder of lock A, it will lose its donation from t2&t3, so its 
+  priority is set back to the base priority. 
+- As t2 now holds lock A, it will add lock A to its locks_holding list and t2 
+  is now the holder of lock A. 
+- Also, since there are no more threads waiting for lock A, lock A's sem_waiter
+  become null again. 
 
 +---------------+-------+---+---------------+-------+
 |           Lock A      |   |          Lock B       |
@@ -305,6 +331,13 @@ thread 1: release lock A
 
 ------------------------Step 6-----------------------
 thread 2: release lock B
+- t2 releasing lock B will allow t3 to hold lock B. At the same time, as t2 is
+  no longer the holder of lock B, it will lose its donation from t3, so its 
+  priority is set back to the base priority 20. 
+- As t3 now holds lock B, it will add lock B to its locks_holding list and t3 
+  is now the holder of lock A. 
+- Also, since there are no more threads waiting for lock B, lock B's sem_waiter
+  become null again. 
 
 +---------------+-------+---+---------------+-------+
 |           Lock A      |   |          Lock B       |
@@ -326,6 +359,12 @@ thread 2: release lock B
 ------------------------Step 7-----------------------
 thread 2: release lock A
 thread 3: release lock B
+- Releasing the locks will reset lock's holder and sem_waiter back to null as
+  there were no threads waiting to acquire the locks. Also, max_priority will be 
+  set to 0.
+- For each threads, their should no longer be any priority donations so its 
+  priority should be equal to ori_priority. Also, locks_holding and lock should 
+  be null now. 
 
 +---------------+-------+---+---------------+-------+
 |           Lock A      |   |          Lock B       |
@@ -433,26 +472,26 @@ interuptions, it prevents concurrency which while current thread is running,
 it won't get interrupted so in this case it prevents multiple threads trying 
 to access the same resource which is changing priority at the same time. 
 But when using a lock to avoid this race, it means each thread will have a 
-lock inside its struct and each time it tries to set priority, it acquires 
+lock inside its struct and each time a thread tries to set priority, it acquires 
 the lock. 
 
 However, this might cause a problem:
-There could be a situation where thread A is holding the lock A and trying 
-to set its priority form 5 to 10. Thread A also holds the lock L which 
-guards for  changing it priority, i.e, only threads holding lock L can change 
-thread A's priority.  However, thread A got switched to thread B right before
-its priority got changed  because thread B has a higher priority of 20. In 
-thread B, it is locked by lock A  which is held by thread A. Therefore, 
-thread B will try to donate its priority to thread A.  However, since thread 
-B do not hold lock L, it won't be able to complete the priority donation, as 
-it requires thread A to release lock L first. But thread A is currently 
-having a lower priority therefore won't be able to do this. Thus, there is a 
-problen with  using locks to avoid this race, as it is atomic and does not 
-prevents thread from switching  to otehr threads. 
+- Suppose thread A has priority 5 and hold lock A. Thread B has priority 20. 
+- Thread A tries to set its priority to 10. 
+- While setting the priority, thread A will acquire the lock L (where only 
+  threads holding lock L can change thread A's priority.)
+- However, thread A got switched to thread B right before its priority got 
+  changed because thread B has a higher priority of 20. 
+- Thread B is currently locked by lock A which is held by thread A. 
+- Therefore, thread B will try to donate its priority to thread A.
+- However, since thread B do not hold lock L, it won't be able to complete the 
+  priority donation, as it requires thread A to release lock L first. 
+- But thread A is currently having a lower priority therefore won't be able to 
+  do this. 
 
-I don't think use a lock can avoid this race. If add a lock to
-thread_set_priority(), it cannot prevent other threads from accessing
-thread A's priority.
+Thus, there is a problen with using locks to avoid this race, as it is atomic 
+and does not prevents thread from switching to otehr threads, so it may run 
+into situations like above. 
 
 ---- RATIONALE ----
 
