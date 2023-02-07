@@ -177,14 +177,14 @@ The data structure that we used to track priority donation are extra fields
 we added to the thread and lock structs.
 
 In the thread struct, we added ori_priority to keep track of the original 
-threads priority in the case that the thread inherits the priority of another 
+threads priority in the case that the thread inherits the priority of another
 thread. We also have each thread keep track of the lock it is trying to 
 acquire. In other words, the lock that the thread is waiting for. Finally,
 each thread maintains locks_holding which as the name suggests, is a list 
-of the locks that the thread is holding, and this will help keeping track of the 
-priority donation since during priority donation, the thread will get donated 
-to by the thread waiting for the locks inside the list of locks that this thread 
-is holding.
+of the locks that the thread is holding, and this will help keeping track of 
+the priority donation since during priority donation, the thread will get 
+donated to by the thread waiting for the locks inside the list of locks that 
+this thread is holding.
 
 In the lock struct, we added lock_elem is a list_elem for the list 
 locks_holding that each thread has. To keep track of the maximum priority 
@@ -360,15 +360,15 @@ waiting will be wake up first, as wanted.
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
 
-1. Go to step 6(function sema_down) if currently there is not a holder for the lock. 
-   Else if there is a holder for the lock:
-2. Set the thread's lock to this lock so it is locked by this lock. 
+1. Go to step 6(function sema_down) if currently there is not a holder for 
+   the lock. Else if there is a holder for the lock:
+2. Set current thread's lock to this lock so it is locked by this lock. 
 3. If the current thread has a higher priority than the highest priority 
    among all other threads holding this lock, set this lock's maximum
    priority to current thread's priority.
-4. Do priority donation to the lock's holder thread H so it can run first: 
+4. Do priority donation to the lock's holder thread H so it can run first:
    4.1. Get the max priority between the H's original priority and the 
-        highest priority among all threads that are locked by locks that H 
+        highest priority among all threads that are locked by locks that H
         holds (which includes current thread's priority since the it 
         is currently locked by locks that H holds).
    4.2. Set H's priority to the above max priority. 
@@ -381,7 +381,8 @@ waiting will be wake up first, as wanted.
    6.2 While the semaphore value is 0, add the current thread to the lock's 
    waiters and block it. 
    6.3 Once the semaphore value is not 0, decrease it by one. 
-   6.4 Now the current thread should hold this lock. Turn off the interruption.
+   6.4 Now the current thread should hold this lock. Turn off the 
+       interruption.
 7. Disable interruption
 8. Set the lock's max priority to current thread's priority. 
 9. Add the lock to the locks holding list of the current thread in descending
@@ -400,7 +401,7 @@ waiting will be wake up first, as wanted.
 6. Function sema_up:
    6.1: Turn off the interruption.
    6.2: If the list of waiters is not empty, sort the list of waiters in 
-   descending order of their priority. Pop out from this list and unblock the 
+   descending order of their priority. Pop out from this list and unblock the
    thread with the highest priority. 
    6.3: Increase the semaphore value by one, and turn on the interruption
    6.4 Run thread yield to allow the highest priority thread run, as some 
@@ -414,7 +415,7 @@ waiting will be wake up first, as wanted.
 
 Suppose thread A has priority 5 and hold lock A. Thread B has priority 20. 
 - Thread A calls thread_set_priority() to set its priority to 10. 
-- Right before the line to set thread A's priority to 10, thread B got locked 
+- Right before the line to set thread A's priority to 10, thread B got locked
   by lock A so it tries to donate its priority to thread A. 
 - Thread B updated thread A's priority to 20.
 - After thread switching happens, thread A set its priorty to 10 which is 
@@ -422,10 +423,32 @@ Suppose thread A has priority 5 and hold lock A. Thread B has priority 20.
   got donated is 20 which is higher than 10. However, at this time, thread 
   A does not know this as the thread_set_priority process started before 
   thread A's priority got donated.
-
 Our implementation disabled interrput in thread_set_priority(), so no thread
 switching can happen during thread_set_priority(). This race condition is 
 prevented.
+
+Using a lock won't be able to avoid the race condition in this case. 
+Using a lock is different from using interupt disabler. When disabling 
+interuptions, it prevents concurrency which while current thread is running, 
+it won't get interrupted so in this case it prevents multiple threads trying 
+to access the same resource which is changing priority at the same time. 
+But when using a lock to avoid this race, it means each thread will have a 
+lock inside its struct and each time it tries to set priority, it acquires 
+the lock. 
+
+However, this might cause a problem:
+There could be a situation where thread A is holding the lock A and trying 
+to set its priority form 5 to 10. Thread A also holds the lock L which 
+guards for  changing it priority, i.e, only threads holding lock L can change 
+thread A's priority.  However, thread A got switched to thread B right before
+its priority got changed  because thread B has a higher priority of 20. In 
+thread B, it is locked by lock A  which is held by thread A. Therefore, 
+thread B will try to donate its priority to thread A.  However, since thread 
+B do not hold lock L, it won't be able to complete the priority donation, as 
+it requires thread A to release lock L first. But thread A is currently 
+having a lower priority therefore won't be able to do this. Thus, there is a 
+problen with  using locks to avoid this race, as it is atomic and does not 
+prevents thread from switching  to otehr threads. 
 
 I don't think use a lock can avoid this race. If add a lock to
 thread_set_priority(), it cannot prevent other threads from accessing
