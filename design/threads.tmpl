@@ -399,52 +399,76 @@ waiting will be wake up first, as wanted.
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
 
-1. Go to step 6(function sema_down) if currently there is not a holder for 
+1. Go to step 6 (function sema_down) if currently there is not a holder for 
    the lock. Else if there is a holder for the lock:
-2. Set current thread's lock to this lock so it is locked by this lock. 
-3. If the current thread has a higher priority than the highest priority 
-   among all other threads holding this lock, set this lock's maximum
-   priority to current thread's priority.
-4. Do priority donation to the lock's holder thread H so it can run first:
-   4.1. Get the max priority between the H's original priority and the 
-        highest priority among all threads that are locked by locks that H
-        holds (which includes current thread's priority since the it 
-        is currently locked by locks that H holds).
-   4.2. Set H's priority to the above max priority. 
-   4.3. As H should now have a higher priority, sort the ready list so H can
-        get run. 
-5. Let the l be the lock that is locking the holder thread if there exist 
-   such l, then go back to step 3. If such l does not exist, go to step 6
+2. Set current thread's thread->lock to this lock to show that current thread
+   is locked by this lock. 
+3. If the current thread has a higher priority than the highest priority among 
+   all other threads holding by this lock (this highest priority is stored in 
+   lock->max_priority), set lock->max_priority to current thread's priority.
+4. Function thread_priority_update(holder_thread)
+   Do priority donation to the holder_thread so holder_thread can run first:
+   4.1. Disable interrupts.
+   4.2  Looping through all the threads that are currently locked by locks
+        that holder_thread holds (locked threads are stored in
+        holder_thread->locks_holding).
+        Find the maximum priority among all the threads locked by locks held by 
+        the holder_thread, and set it to donation priority
+   4.3. If donation priority (find by above loop) is higher than holder_thread's 
+        original priority. 
+            Set holder_thread's priority to the above donation priority. 
+   4.4. As holder_thread should now have a higher priority, change the status of
+        holder_thread and sort the ready_list by prioriy so that threads with 
+        highest priority is at the head of the list. 
+   4.5. Set the interruption to its original level.
+5. If there exist a lock that locks current lock's holder, then go back to 
+   step 3 to do priority donation for this lock's holder too. 
+   If such l does not exist, go to step 6
 6. Fuction sema_down()
-   6.1 Disable interuption. 
+   6.1 Disable interrupts. 
    6.2 While the semaphore value is 0, add the current thread to the lock's 
    waiters and block it. 
    6.3 Once the semaphore value is not 0, decrease it by one. 
-   6.4 Now the current thread should hold this lock. Turn off the 
+   6.4 Now the current thread should hold this lock. Turn on the 
        interruption.
-7. Disable interruption
+7. Disable interrupts.
 8. Set the lock's max priority to current thread's priority. 
 9. Add the lock to the locks holding list of the current thread in descending
     order of each lock's max priority. 
 10. Set the current thread to be the lock's holder. 
-11. Turn on the interruption.
+11. Turn on the interrupts.
 
 >> B5: Describe the sequence of events when lock_release() is called
->> on a lock that a higher-priority thread is waiting for.
+>> on a lock that a higher-priority thread is waiting for
+
+1. If thread_mlfqs, go to step 5, else:
 2. Turn off the interruption while updating the lock and its holder, delete 
    all elements in the lock_holding list of the thread. Which unlocks all
    the thread that is previously locked by this lock.
 3. Update the old lock holder thread's priority as it just released a lock.
-4. Turn on the interruption.
+   3.1. Disable interrupts.
+   3.2  Looping through all the threads that are currently locked by locks
+        that the old lock holder thread holds (locked threads are stored in
+        holder_thread->locks_holding).
+        Find the maximum priority among all the threads locked by locks held by 
+        the old lock holder thread, and set it to donation priority
+   3.3. If donation priority (find by above loop) is higher than old lock holder
+        thread's original priority. Set its priority to the donation priority. 
+   3.4. As the old lock holder thread should now have a higher priority, change 
+        the status of this thread and sort the ready_list by prioriy so that 
+        threads with highest priority is at the head of the list. 
+   3.5. Set the interruption to its original level.
+4. Set the interruption to its original level.
 5. Set the lock's new holder to NULL.
-6. Function sema_up:
+6. Sema_up:
    6.1: Turn off the interruption.
    6.2: If the list of waiters is not empty, sort the list of waiters in 
-   descending order of their priority. Pop out from this list and unblock the
-   thread with the highest priority. 
-   6.3: Increase the semaphore value by one, and turn on the interruption
-   6.4 Run thread yield to allow the highest priority thread run, as some 
-   thread's priority may have been changed after this lock got released.
+        descending order of their priority. Pop out from this list and unblock 
+        the thread with the highest priority. 
+   6.3: Increase the semaphore value by one, and set the interruption to its 
+        original level.
+   6.4: Run thread yield to allow the highest priority thread run, as some 
+        thread's priority may have been changed after this lock got released.
 
 ---- SYNCHRONIZATION ----
 
@@ -467,8 +491,8 @@ switching can happen during thread_set_priority(). This race condition is
 prevented.
 
 Using a lock won't be able to avoid the race condition in this case. 
-Using a lock is different from using interupt disabler. When disabling 
-interuptions, it prevents concurrency which while current thread is running, 
+Using a lock is different from using interrupt disabler. When disabling 
+interrupts, it prevents concurrency which while current thread is running, 
 it won't get interrupted so in this case it prevents multiple threads trying 
 to access the same resource which is changing priority at the same time. 
 But when using a lock to avoid this race, it means each thread will have a 
@@ -498,6 +522,18 @@ into situations like above.
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
 
+We choose this design because it allows each threads to keep track of all the 
+locks that they are currently holding, as well as the lock that is currently 
+locking the thread, if there are any. This way, when doing priority donations, 
+thread's priority is able to get donated by the thread with the highest 
+priority that are locked by locks that the current thread hold. Our design also 
+allowed each lock to hold the max_priority within the threads locked by this 
+lock. We were considering to not include this field, but we then realized that 
+this field is necessary as it helps the priority donation process, as well as 
+reduces the time required when trying to figure out which priority that the 
+tread should be donated to. In addition, the design we choose allows each lock
+to keep track of the list of threads waiting for this lock, which helps in 
+making the lock_release process easier and more efficient. 
 
               ADVANCED SCHEDULER
               ==================
@@ -557,12 +593,24 @@ have gotten added to the ready list earlier, then it gets to run first.
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
 
+The cost of scheduling is divided between code inside and outside the
+interrupt context to minimize the overhead of scheduling in order to
+imrpove performance. Having the handler do as little work as possible,
+the overhead of scheduling is minimized as most of the work (updating 
+thread priority, updating recent_cpu, calculating load_avg, etc.) is 
+performed outside of the interrput context.
+
 ---- RATIONALE ----
 
 >> C5: Briefly critique your design, pointing out advantages and
 >> disadvantages in your design choices.  If you were to have extra
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
+
+If were to have extra time, we could have maintained the
+ready_list and sleeping_list more efficiently. For example, insert operations 
+take O(n) time. However, inroducing a new data structure such as a heap, we
+can cut down insert to O(log n). 
 
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
@@ -571,8 +619,18 @@ have gotten added to the ready list earlier, then it gets to run first.
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
 
-We used the sample provided by the TA regarding fixed point numbers 
-and implemented additional features such as division and subraction.
+The reason for implementing fixed-point arithmetic in Pintos was to resolve
+the issue of the lack of support for floating point numbers. As recent_cpu 
+and load_avg are required to be represented as floating point numbers, we
+decided to implement fixed point arithmetic as a work-around. The 
+implementation was done following the basics provided by the TA to split a
+32 bit integral into a fractional part and integral part, each comprised of 
+14 and 17 bits respectively. We defined all the necessary fixed point
+arithmetic operations within a header file named fixed-point. This led to 
+an organized and efficient way to manipulate fixed point numbers 
+(i.e recent_cpu and load_avg). The functions or macros defined in 
+fixed-point.h allows for better organization of the code, improved
+readability, and much easier maintenance (especially when debugging).
 
                SURVEY QUESTIONS
                ================
