@@ -105,11 +105,12 @@ struct thread
     struct list_elem sleepelem;         /* List element for sleeping
 	                                        threads. */
     int ori_priority;                   /* Thread's original priority */
-    struct list locks_holding;          /* List of locks the thread is holding. */
-    struct lock *lock;                  /* The lock that the thread is trying to 
-                                           acquire. */
+    struct list locks_holding;          /* List of locks the thread is 
+                                           holding. */
+    struct lock *lock;                  /* The lock that the thread is 
+                                           trying to acquire. */
     int nice;                           /* Thread niceness */
-    int32_t recent_cpu;                      /* CPU time thread has recently.*/
+    int32_t recent_cpu;                 /* CPU time thread has recently.*/
   };
 
 /* If false (default), use round-robin scheduler.
@@ -120,7 +121,7 @@ extern bool thread_mlfqs;
 void thread_init (void);
 void thread_start (void);
 
-void thread_tick (int64_t);      /* P1 update */
+void thread_tick (int64_t);             /* P1 update */
 void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
