@@ -593,12 +593,13 @@ have gotten added to the ready list earlier, then it gets to run first.
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
 
-The cost of scheduling is divided between code inside and outside the
-interrupt context to minimize the overhead of scheduling in order to
-imrpove performance. Having the handler do as little work as possible,
-the overhead of scheduling is minimized as most of the work (updating 
-thread priority, updating recent_cpu, calculating load_avg, etc.) is 
-performed outside of the interrput context.
+Most of the calculations for priorities are done in interrupt context, which
+slows down the program because each time we call timer_interrupt, there are some
+calculations to be done. Our implementation tried to minimize cost where we are 
+only recalculating each thread's priority every four ticks, instead of redo all
+calculations each time we call timer_interrupt. We also ignore idle_thread when 
+try do some of the calculations to reduce the work load inside interrupt 
+context.
 
 ---- RATIONALE ----
 
@@ -607,10 +608,32 @@ performed outside of the interrput context.
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
 
-If were to have extra time, we could have maintained the
-ready_list and sleeping_list more efficiently. For example, insert operations 
-take O(n) time. However, inroducing a new data structure such as a heap, we
-can cut down insert to O(log n). 
+An advantage of our design is its simplicity. For example, we use the
+built-in lists provided in the provided starter code (however, this is
+a double-edged sword of which we touch upon in the following paragraphs). 
+To add on, our implementation is fairly straight-forward and seems to be 
+a common way of implementing an advanced scheduler. Moreover, within our 
+implementation of timer_interrupt, we efficiently update the priority, 
+load_avg, and recent_cpu. 
+
+A disadvantage of our design is that some the calculations we perform could 
+be unnecessary. If the time slice is very small, we still perform all of the 
+calculations regardless of whether or not the computation makes any 
+difference. Another disadvantage is that our implementation could be more 
+efficient. 
+
+If were to have extra time, we could have given more thought to our design. 
+Introducing auxiliary data structures could have helped us reduce the time 
+complexity of certain operations. For example, we could have maintained the 
+ready_list and sleeping_list more efficiently. Currently, it takes O(n) time 
+whenever we perform an insert operation. However, inroducing a new data 
+structure such as a heap, we can cut down insert to O(log n) time. But, 
+removing an element in a heap costs O(log n) while the current list 
+implementation is O(1). We could choose one design over the other if we 
+give more consideration as to which operations we expect to occur more 
+frequently. Doing so, we can improve the complexity of our code. So to 
+reiterate, if we had more time, we could reconsider implementation details 
+to improve the complexity of the work done. 
 
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
