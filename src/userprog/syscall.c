@@ -3,6 +3,8 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/pagedir.h"
+#include "threads/vaddr.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -49,40 +51,118 @@ copy_in (void *dst_, const void *usrc_, size_t size)
   // TODO: error checking if address is valid
 }
 
+static bool
+valid_check (struct intr_frame *f UNUSED)
+{
+  if (f == NULL)
+    return false;
+  if (is_kernel_vaddr (f->esp))
+    return false;
+  if (pagedir_get_page (thread_current ()->pagedir, f->esp) == NULL)
+   	return false;
+	return true;
+}
+
+static void
+handle_umimplement (int syscall_number)
+{
+  printf("------------ syscall number: %u --------------\n", syscall_number);
+  thread_exit ();
+}
+
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  // printf ("system call!\n");
-  // thread_exit ();
-
   unsigned syscall_number;
   int args[3];
-  //extract teh syscall number
+  // check if valid address
+  if (! valid_check (f))
+    {
+      thread_current ()->exit_code = *(((int *) f->esp) + 1);
+      thread_exit ();
+    }
+  //extract the syscall number
   copy_in(&syscall_number, f->esp, sizeof syscall_number);
   // printf("  ***syscall number: %u (should be %u)\n", syscall_number, SYS_WRITE);
 
-  if (syscall_number == 1)
-  {
-    thread_current ()->exit_code = *(((int *) f->esp) + 1);
-    thread_exit ();
-  }
-  else if (syscall_number == 9)
-  {
-    //extract the 3 arguements
-    copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3);
-    // printf("  ***fd: %d (should be %u)\n", args[0], STDOUT_FILENO);
-    // printf("  ***buffer address: %p\n", args[1]);
-    // printf("  ***size: %u\n", args[2]);
+  switch (syscall_number) {
+  	case 0:
+      {
+        shutdown_power_off (syscall_number);
+        break;
+      }
+    case 1:
+      {
+        thread_current ()->exit_code = *(((int *) f->esp) + 1);
+        thread_exit ();
+        break;
+      }
+    case 2:
+      {
+        handle_umimplement (syscall_number);
+        break;
+      }
+    case 3:
+      {
+        handle_umimplement (syscall_number);
+        break;
+      }
+    case 4:
+      {
+        handle_umimplement (syscall_number);
+        break;
+      }
+    case 5:
+      {
+        handle_umimplement (syscall_number);
+        break;
+      }
+    case 6:
+      {
+        handle_umimplement (syscall_number);
+        break;
+      }
+    case 7:
+      {
+        handle_umimplement (syscall_number);
+        break;
+      }
+    case 8:
+      {
+        handle_umimplement (syscall_number);
+        break;
+      }
+    case 9:
+      {
+        //extract the 3 arguements
+        copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3);
+        // printf("  ***fd: %d (should be %u)\n", args[0], STDOUT_FILENO);
+        // printf("  ***buffer address: %p\n", args[1]);
+        // printf("  ***size: %u\n", args[2]);
 
-    //execute the write on STDOUT_FILENO
-    putbuf (args[1], args[2]);
+        //execute the write on STDOUT_FILENO
+        putbuf (args[1], args[2]);
 
-    //set the returned value
-    f->eax = args[2];
-  }
-  else
-  {
-    printf("------------ syscall number: %u --------------\n", syscall_number);
-    thread_exit ();
+        //set the returned value
+        f->eax = args[2];
+        break;
+      }
+    case 10:
+      {
+        handle_umimplement (syscall_number);
+        break;
+
+      }
+    case 11:
+      {
+        handle_umimplement (syscall_number);
+        break;
+      }
+    case 12:
+      {
+        handle_umimplement (syscall_number);
+        break;
+      }
   }
 }
+
