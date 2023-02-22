@@ -464,6 +464,13 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+  /* P2 update */
+  t->exit_code = -1;
+  t->waiting_status = 0;
+  list_init (&t->children);
+  sema_init (&t->wait_lock, 0);
+  sema_init (&t->exit_lock, 0);
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -582,3 +589,17 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/* P2 updates */
+struct thread *
+get_thread (tid_t tid)
+{
+  for (struct list_elem *e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        return t;
+    }
+  return NULL;
+}
