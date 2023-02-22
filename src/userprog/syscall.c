@@ -66,9 +66,9 @@ copy_in (void *dst_, const void *usrc_, size_t size)
 }
 
 static void
-handle_umimplement (int syscall_number)
+handle_halt (void)
 {
-  thread_exit ();
+  shutdown_power_off ();
 }
 
 static void
@@ -77,6 +77,85 @@ handle_exit (struct intr_frame *f)
   thread_current ()->exit_code = *(((int *) f->esp) + 1);
   thread_exit ();
 }
+
+static pid_t
+handle_exec (const char *cmd_line)
+{
+	//printf("System call: exec\ncmd_line: %s\n", cmd_line);
+  tid_t child_tid = TID_ERROR;
+
+  // if(!valid_mem_access(cmd_line))
+  //   handle_exit (-1);
+
+  child_tid = process_execute (cmd_line);
+
+	return child_tid;
+}
+
+static void
+handle_create (void)
+{
+  thread_exit ();
+}
+
+static void
+handle_remove (void)
+{
+  thread_exit ();
+}
+
+static int
+handle_open (const char *file)
+{
+//   lock_acquire(&file_system_lock);
+//   struct file *file_ptr = filesys_open(file_name); // from filesys.h
+//   if (!file_ptr)
+//   {
+//     lock_release(&file_system_lock);
+//     return ERROR;
+//   }
+//   int filedes = add_file(file_ptr);
+//   lock_release(&file_system_lock);
+//   return filedes;
+  thread_exit ();
+}
+
+static void
+handle_filesize (void)
+{
+  thread_exit ();
+}
+
+static void
+handle_read (void)
+{
+  thread_exit ();
+}
+
+static void
+handle_write (void)
+{
+  thread_exit ();
+}
+
+static void
+handle_seek (void)
+{
+  thread_exit ();
+}
+
+static void
+handle_tell (void)
+{
+  thread_exit ();
+}
+
+static void
+handle_close (void)
+{
+  thread_exit ();
+}
+
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
@@ -85,12 +164,12 @@ syscall_handler (struct intr_frame *f UNUSED)
   //extract the syscall number
   if (!copy_in(&syscall_number, f->esp, sizeof syscall_number))
     handle_exit (f);
-  // printf("  ***syscall number: %u (should be %u)\n", syscall_number, SYS_WRITE);
+  // printf("  ***syscall number: %u \n", syscall_number);
 
   switch (syscall_number) {
   	case 0: // halt
       {
-        shutdown_power_off (syscall_number);
+        handle_halt ();
         break;
       }
     case 1: // exit
@@ -100,39 +179,44 @@ syscall_handler (struct intr_frame *f UNUSED)
       }
     case 2: // exec
       {
-        handle_umimplement (syscall_number);
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+          handle_exit (f);
+  	    f->eax = (uint32_t) handle_exec (args[0]);
         break;
       }
     case 3: // wait
       {
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_exit (f);
-  	    f->eax = (uint32_t) process_wait (args[2]);
+  	    f->eax = (uint32_t) process_wait (args[0]);
         break;
       }
     case 4: // create
       {
-        handle_umimplement (syscall_number);
+        handle_create ();
         break;
       }
     case 5: // remove
       {
-        handle_umimplement (syscall_number);
+        handle_remove ();
         break;
       }
     case 6: // open
       {
-        handle_umimplement (syscall_number);
+        // if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+        //   handle_exit (f);
+  	    // f->eax = (uint32_t) handle_open (args[0]);
+        handle_open (args[0]);
         break;
       }
     case 7: // filesize
       {
-        handle_umimplement (syscall_number);
+        handle_filesize ();
         break;
       }
     case 8: // read
       {
-        handle_umimplement (syscall_number);
+        handle_read ();
         break;
       }
     case 9: // write
@@ -153,20 +237,19 @@ syscall_handler (struct intr_frame *f UNUSED)
       }
     case 10:  // seek
       {
-        handle_umimplement (syscall_number);
+        handle_seek ();
         break;
 
       }
     case 11:  // tell
       {
-        handle_umimplement (syscall_number);
+        handle_tell ();
         break;
       }
     case 12:  // close
       {
-        handle_umimplement (syscall_number);
+        handle_close ();
         break;
       }
   }
 }
-
