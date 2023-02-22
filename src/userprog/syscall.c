@@ -66,7 +66,6 @@ valid_check (struct intr_frame *f UNUSED)
 static void
 handle_umimplement (int syscall_number)
 {
-  printf("------------ syscall number: %u --------------\n", syscall_number);
   thread_exit ();
 }
 
