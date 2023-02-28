@@ -98,7 +98,7 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
   /* P2 update */
   struct list_elem *e;
@@ -265,6 +265,8 @@ static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
+static void store_arguments (void **esp, const char *file_name, 
+                              char **save_ptr);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
@@ -493,28 +495,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
-/* Create a minimal stack by mapping a zeroed page at the top of
-   user virtual memory. */
-static bool
-setup_stack (void **esp, const char *file_name, char **save_ptr) 
+/* P2 update - helper function for argument passing */
+static void
+store_arguments (void **esp, const char *file_name, char **save_ptr)
 {
-  uint8_t *kpage;
-  bool success = false;
-
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
-      else
-        {
-          palloc_free_page (kpage);
-          return success;
-        }
-    }
-
-  /* Project 2 update - store arguements */
   char *token;
   int argc = 0;
   int argv_n = 2;
@@ -563,6 +547,31 @@ setup_stack (void **esp, const char *file_name, char **save_ptr)
   // hex_dump((uintptr_t)PHYS_BASE-32, *esp, 32, 1);
   free(argv);
   free(zero);
+}
+
+/* Create a minimal stack by mapping a zeroed page at the top of
+   user virtual memory. */
+static bool
+setup_stack (void **esp, const char *file_name, char **save_ptr) 
+{
+  uint8_t *kpage;
+  bool success = false;
+
+  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  if (kpage != NULL) 
+    {
+      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      if (success)
+        *esp = PHYS_BASE;
+      else
+        {
+          palloc_free_page (kpage);
+          return success;
+        }
+    }
+
+  /* Project 2 update - store arguments */
+  store_arguments (esp, file_name, save_ptr);
   return success;
 }
 

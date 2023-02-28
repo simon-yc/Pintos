@@ -6,6 +6,7 @@
 #include "userprog/pagedir.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "devices/shutdown.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -157,7 +158,7 @@ handle_close (void)
 }
 
 static void
-syscall_handler (struct intr_frame *f UNUSED) 
+syscall_handler (struct intr_frame *f) 
 {
   unsigned syscall_number;
   int args[3];  
@@ -207,6 +208,8 @@ syscall_handler (struct intr_frame *f UNUSED)
         //   handle_exit (f);
   	    // f->eax = (uint32_t) handle_open (args[0]);
         handle_open (args[0]);
+        // printf("---------OPEN---------\n");
+        // handle_remove ();
         break;
       }
     case 7: // filesize
@@ -221,7 +224,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       }
     case 9: // write
       {
-        //extract the 3 arguements
+        //extract the 3 arguments
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
           handle_exit (f);
         // printf("  ***fd: %d (should be %u)\n", args[0], STDOUT_FILENO);
