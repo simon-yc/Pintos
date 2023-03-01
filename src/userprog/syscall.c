@@ -44,7 +44,9 @@ put_user (uint8_t *udst, uint8_t byte)
 static bool
 valid_check (const void *usrc_)
 {
-  if (is_kernel_vaddr (usrc_))
+  if (usrc_ == NULL)
+    return false;
+  if (!is_user_vaddr(usrc_))
     return false;
   if (pagedir_get_page (thread_current ()->pagedir, usrc_) == NULL)
    	return false;
@@ -55,7 +57,7 @@ static bool
 copy_in (void *dst_, const void *usrc_, size_t size)
 {
   // error checking if address is valid
-  if (! valid_check (usrc_))
+  if (!valid_check (usrc_))
     return false;
 
   uint8_t *dst = dst_;
@@ -64,6 +66,13 @@ copy_in (void *dst_, const void *usrc_, size_t size)
   for (; size > 0; size--, dst++, usrc++)
     *dst = get_user (usrc);
   return true;
+}
+
+static void
+handle_bad_addr (struct intr_frame *f)
+{
+  thread_current ()->exit_code = -1;
+  thread_exit ();
 }
 
 static void
@@ -86,7 +95,7 @@ handle_exec (const char *cmd_line)
   tid_t child_tid = TID_ERROR;
 
   // if(!valid_mem_access(cmd_line))
-  //   handle_exit (-1);
+  //   handle_bad_addr (-1);
 
   child_tid = process_execute (cmd_line);
 
@@ -134,9 +143,10 @@ handle_read (void)
 }
 
 static void
-handle_write (void)
+handle_write (int args[], struct intr_frame *f)
 {
-  thread_exit ();
+  putbuf (args[1], args[2]);
+  f->eax = args[2];
 }
 
 static void
@@ -163,8 +173,12 @@ syscall_handler (struct intr_frame *f)
   unsigned syscall_number;
   int args[3];  
   //extract the syscall number
-  if (!copy_in(&syscall_number, f->esp, sizeof syscall_number))
-    handle_exit (f);
+  if (!copy_in (&syscall_number, f->esp, sizeof syscall_number))
+    handle_bad_addr (f);
+  //extract the 3 arguments
+  if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
+    handle_bad_addr (f);
+        
   // printf("  ***syscall number: %u \n", syscall_number);
 
   switch (syscall_number) {
@@ -180,15 +194,11 @@ syscall_handler (struct intr_frame *f)
       }
     case 2: // exec
       {
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (f);
   	    f->eax = (uint32_t) handle_exec (args[0]);
         break;
       }
     case 3: // wait
       {
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (f);
   	    f->eax = (uint32_t) process_wait (args[0]);
         break;
       }
@@ -204,8 +214,6 @@ syscall_handler (struct intr_frame *f)
       }
     case 6: // open
       {
-        // if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-        //   handle_exit (f);
   	    // f->eax = (uint32_t) handle_open (args[0]);
         handle_open (args[0]);
         // printf("---------OPEN---------\n");
@@ -224,18 +232,7 @@ syscall_handler (struct intr_frame *f)
       }
     case 9: // write
       {
-        //extract the 3 arguments
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
-          handle_exit (f);
-        // printf("  ***fd: %d (should be %u)\n", args[0], STDOUT_FILENO);
-        // printf("  ***buffer address: %p\n", args[1]);
-        // printf("  ***size: %u\n", args[2]);
-
-        //execute the write on STDOUT_FILENO
-        putbuf (args[1], args[2]);
-
-        //set the returned value
-        f->eax = args[2];
+        handle_write (args, f);
         break;
       }
     case 10:  // seek
