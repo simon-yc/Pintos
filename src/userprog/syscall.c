@@ -44,12 +44,9 @@ put_user (uint8_t *udst, uint8_t byte)
 static bool
 valid_check (const void *usrc_)
 {
-  if (usrc_ == NULL)
+  if (usrc_ == NULL || !is_user_vaddr(usrc_) ||
+      pagedir_get_page (thread_current ()->pagedir, usrc_) == NULL)
     return false;
-  if (!is_user_vaddr(usrc_))
-    return false;
-  if (pagedir_get_page (thread_current ()->pagedir, usrc_) == NULL)
-   	return false;
 	return true;
 }
 
@@ -82,9 +79,9 @@ handle_halt (void)
 }
 
 static void
-handle_exit (struct intr_frame *f)
+handle_exit (const char *cmd_line)
 {
-  thread_current ()->exit_code = *(((int *) f->esp) + 1);
+  thread_current ()->exit_code = cmd_line;
   thread_exit ();
 }
 
@@ -171,14 +168,9 @@ static void
 syscall_handler (struct intr_frame *f) 
 {
   unsigned syscall_number;
-  int args[3];  
   //extract the syscall number
   if (!copy_in (&syscall_number, f->esp, sizeof syscall_number))
     handle_bad_addr (f);
-  //extract the 3 arguments
-  if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
-    handle_bad_addr (f);
-        
   // printf("  ***syscall number: %u \n", syscall_number);
 
   switch (syscall_number) {
@@ -189,65 +181,98 @@ syscall_handler (struct intr_frame *f)
       }
     case 1: // exit
       {
-        handle_exit (f);
+        int args[1];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+          handle_bad_addr (f);
+        handle_exit (args[0]);
         break;
       }
     case 2: // exec
       {
-  	    f->eax = (uint32_t) handle_exec (args[0]);
+  	    int args[1];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+          handle_bad_addr (f);
+        f->eax = (uint32_t) handle_exec (args[0]);
         break;
       }
     case 3: // wait
       {
-  	    f->eax = (uint32_t) process_wait (args[0]);
+  	    int args[1];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+          handle_bad_addr (f);
+        f->eax = (uint32_t) process_wait (args[0]);
         break;
       }
     case 4: // create
       {
+        int args[2];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 2))
+          handle_bad_addr (f);
         handle_create ();
         break;
       }
     case 5: // remove
       {
+        int args[1];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+          handle_bad_addr (f);
         handle_remove ();
         break;
       }
     case 6: // open
       {
-  	    // f->eax = (uint32_t) handle_open (args[0]);
+        int args[1];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+          handle_bad_addr (f);
         handle_open (args[0]);
-        // printf("---------OPEN---------\n");
-        // handle_remove ();
         break;
       }
     case 7: // filesize
       {
+        int args[1];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+          handle_bad_addr (f);
         handle_filesize ();
         break;
       }
     case 8: // read
       {
+        int args[3];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
+          handle_bad_addr (f);
         handle_read ();
         break;
       }
     case 9: // write
       {
+        int args[3];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
+          handle_bad_addr (f);
         handle_write (args, f);
         break;
       }
     case 10:  // seek
       {
+        int args[2];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 2))
+          handle_bad_addr (f);
         handle_seek ();
         break;
 
       }
     case 11:  // tell
       {
+        int args[1];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+          handle_bad_addr (f);
         handle_tell ();
         break;
       }
     case 12:  // close
       {
+        int args[1];
+        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+          handle_bad_addr (f);
         handle_close ();
         break;
       }
