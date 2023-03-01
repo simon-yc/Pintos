@@ -38,14 +38,14 @@ get_user(const uint8_t *uaddr)
 /* Writes BYTE to user address UDST. 
    UDST must be below PHYS_BASE. 
    RETURNS true if successful, false if a segfault occured. */
-// static bool
-// put_user (uint8_t *udst, uint8_t byte)
-// {
-//   int error_code;
-//   asm ("movl $1f, %0; movb %b2, %1; 1:"
-//         : "=&a" (error_code), "=m" (*udst) : "q" (byte));
-//   return error_code != -1;
-// }
+static bool
+put_user (uint8_t *udst, uint8_t byte)
+{
+  int error_code;
+  asm ("movl $1f, %0; movb %b2, %1; 1:"
+        : "=&a" (error_code), "=m" (*udst) : "q" (byte));
+  return error_code != -1;
+}
 
 static bool
 valid_check (const void *usrc_)
@@ -263,7 +263,7 @@ syscall_handler (struct intr_frame *f)
   	    int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_bad_addr (f);
-        if (!args[0] || !valid_check((const char *) args[0]))
+        if (!valid_check((const char *) args[0]))
           handle_bad_addr (f);
         f->eax = (uint32_t) handle_exec ((const char *) args[0]);
         break;
@@ -281,7 +281,7 @@ syscall_handler (struct intr_frame *f)
         int args[2];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 2))
           handle_bad_addr (f);
-        if (!args[0] || !valid_check((const char *) args[0]))
+        if (!valid_check((const char *) args[0]))
           handle_bad_addr (f);
         f->eax = (uint32_t) handle_create ((const char *) args[0], args[1]);
         break;
@@ -291,7 +291,7 @@ syscall_handler (struct intr_frame *f)
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_bad_addr (f);
-        if (!args[0]|| !valid_check((const char *) args[0]))
+        if (!valid_check((const char *) args[0]))
           handle_bad_addr (f);
         f->eax = (uint32_t) handle_remove ((const char *) args[0]);
         break;
@@ -301,7 +301,7 @@ syscall_handler (struct intr_frame *f)
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_bad_addr (f);
-        if (!args[0] || !valid_check((const char *) args[0]))
+        if (!valid_check((const char *) args[0]))
           handle_bad_addr (f);
         f->eax = handle_open ((const char *) args[0]);
         break;
@@ -319,7 +319,7 @@ syscall_handler (struct intr_frame *f)
         int args[3];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
           handle_bad_addr (f);
-        if (!args[1] || !valid_check((const char *) args[1]))
+        if (!valid_check((const char *) args[1]))
           handle_bad_addr (f);
         f->eax = handle_read (args[0], (void *) args[1], (unsigned) args[2]);
         break;
@@ -329,7 +329,7 @@ syscall_handler (struct intr_frame *f)
         int args[3];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
           handle_bad_addr (f);
-        if (!args[1] || !valid_check((const char *) args[1]))
+        if (!valid_check((const char *) args[1]))
           handle_bad_addr (f);
         handle_write (args, f);
         break;
