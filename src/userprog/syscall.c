@@ -11,6 +11,7 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include <list.h>
+#include "devices/input.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -158,10 +159,42 @@ handle_filesize (int fd)
   return size;
 }
 
-static void
-handle_read (void)
+static int
+handle_read (int fd, void *buffer, unsigned size)
 {
-  thread_exit ();
+  if (fd == STDIN_FILENO)
+    {
+      uint8_t *temp_buf = (uint8_t *) buffer;
+      for (unsigned i = 0; i < size; i ++)
+        {
+          temp_buf[i] = input_getc();
+        }
+      return size;
+    }
+  else 
+    {
+      lock_acquire(&filesys_lock);
+      struct file *file = NULL;
+      struct thread *cur = thread_current();
+      struct list_elem *e;
+      for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+          e = list_next (e))
+        {
+          struct opened_file *f = list_entry (e, struct opened_file, file_elem);
+          if (fd == f->fd)
+            {
+              file = f->file;
+            }
+        }
+      if (!file)
+        {
+          lock_release(&filesys_lock);
+          return -1;
+        }
+      int bytes_read = file_read(file, buffer, size);
+      lock_release (&filesys_lock);
+      return bytes_read;
+    }
 }
 
 static void
@@ -286,7 +319,9 @@ syscall_handler (struct intr_frame *f)
         int args[3];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
           handle_bad_addr (f);
-        handle_read ();
+        if (!args[1] || !valid_check((const char *) args[1]))
+          handle_bad_addr (f);
+        f->eax = handle_read (args[0], (void *) args[1], (unsigned) args[2]);
         break;
       }
     case 9: // write
@@ -306,7 +341,6 @@ syscall_handler (struct intr_frame *f)
           handle_bad_addr (f);
         handle_seek ();
         break;
-
       }
     case 11:  // tell
       {
