@@ -1,5 +1,6 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
@@ -7,6 +8,9 @@
 #include "threads/vaddr.h"
 #include "userprog/process.h"
 #include "devices/shutdown.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
+#include <list.h>
 
 static void syscall_handler (struct intr_frame *);
 
@@ -14,6 +18,7 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init (&filesys_lock);
 }
 
 /* P2 updates */
@@ -32,14 +37,14 @@ get_user(const uint8_t *uaddr)
 /* Writes BYTE to user address UDST. 
    UDST must be below PHYS_BASE. 
    RETURNS true if successful, false if a segfault occured. */
-static bool
-put_user (uint8_t *udst, uint8_t byte)
-{
-  int error_code;
-  asm ("movl $1f, %0; movb %b2, %1; 1:"
-        : "=&a" (error_code), "=m" (*udst) : "q" (byte));
-  return error_code != -1;
-}
+// static bool
+// put_user (uint8_t *udst, uint8_t byte)
+// {
+//   int error_code;
+//   asm ("movl $1f, %0; movb %b2, %1; 1:"
+//         : "=&a" (error_code), "=m" (*udst) : "q" (byte));
+//   return error_code != -1;
+// }
 
 static bool
 valid_check (const void *usrc_)
@@ -79,58 +84,78 @@ handle_halt (void)
 }
 
 static void
-handle_exit (const char *cmd_line)
+handle_exit (int status)
 {
-  thread_current ()->exit_code = cmd_line;
+  thread_current ()->exit_code = status;
   thread_exit ();
 }
 
 static pid_t
 handle_exec (const char *cmd_line)
 {
-	//printf("System call: exec\ncmd_line: %s\n", cmd_line);
-  tid_t child_tid = TID_ERROR;
-
-  // if(!valid_mem_access(cmd_line))
-  //   handle_bad_addr (-1);
-
+  tid_t child_tid = -1;
   child_tid = process_execute (cmd_line);
 
 	return child_tid;
 }
 
-static void
-handle_create (void)
+static bool
+handle_create (const char* file, unsigned initial_size)
 {
-  thread_exit ();
+  lock_acquire(&filesys_lock);
+  bool success = filesys_create(file, initial_size);
+  lock_release(&filesys_lock);
+  return success;
 }
 
-static void
-handle_remove (void)
+static bool
+handle_remove (const char* file)
 {
-  thread_exit ();
+  lock_acquire(&filesys_lock);
+  bool success = filesys_remove(file);
+  lock_release(&filesys_lock);
+  return success;
 }
 
 static int
 handle_open (const char *file)
 {
-//   lock_acquire(&file_system_lock);
-//   struct file *file_ptr = filesys_open(file_name); // from filesys.h
-//   if (!file_ptr)
-//   {
-//     lock_release(&file_system_lock);
-//     return ERROR;
-//   }
-//   int filedes = add_file(file_ptr);
-//   lock_release(&file_system_lock);
-//   return filedes;
-  thread_exit ();
+  lock_acquire(&filesys_lock);
+  struct file *open_file = filesys_open(file);
+  lock_release(&filesys_lock);
+  if (open_file == NULL)
+    {
+      return -1;
+    }
+  else
+    {
+      struct opened_file *new_file = malloc(sizeof(struct opened_file));
+      new_file->file = open_file;
+      new_file->fd = thread_current()->fd;
+      thread_current()->fd++;
+      list_push_back(&thread_current()->opened_files, &new_file->file_elem);
+      return new_file->fd;
+    }
 }
 
-static void
-handle_filesize (void)
+static int
+handle_filesize (int fd)
 {
-  thread_exit ();
+  lock_acquire(&filesys_lock);
+  struct thread *cur = thread_current();
+  struct list_elem *e;
+  int size = -1; 
+  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+       e = list_next (e))
+    {
+      struct opened_file *f = list_entry (e, struct opened_file, file_elem);
+      if (fd == f->fd)
+        {
+          size = file_length(f->file);
+        }
+    }
+  lock_release(&filesys_lock);
+  return size;
 }
 
 static void
@@ -142,7 +167,7 @@ handle_read (void)
 static void
 handle_write (int args[], struct intr_frame *f)
 {
-  putbuf (args[1], args[2]);
+  putbuf ((const char *) args[1], args[2]);
   f->eax = args[2];
 }
 
@@ -159,9 +184,22 @@ handle_tell (void)
 }
 
 static void
-handle_close (void)
+handle_close (int fd)
 {
-  thread_exit ();
+  lock_acquire(&filesys_lock);
+  struct thread *cur = thread_current();
+  struct list_elem *e;
+  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+       e = list_next (e))
+    {
+      struct opened_file *f = list_entry (e, struct opened_file, file_elem);
+      if (fd == f->fd)
+        {
+          list_remove(&f->file_elem);
+          file_close(f->file);
+        }
+    }
+  lock_release(&filesys_lock);
 }
 
 static void
@@ -192,7 +230,9 @@ syscall_handler (struct intr_frame *f)
   	    int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_bad_addr (f);
-        f->eax = (uint32_t) handle_exec (args[0]);
+        if (!args[0] || !valid_check((const char *) args[0]))
+          handle_bad_addr (f);
+        f->eax = (uint32_t) handle_exec ((const char *) args[0]);
         break;
       }
     case 3: // wait
@@ -208,7 +248,9 @@ syscall_handler (struct intr_frame *f)
         int args[2];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 2))
           handle_bad_addr (f);
-        handle_create ();
+        if (!args[0] || !valid_check((const char *) args[0]))
+          handle_bad_addr (f);
+        f->eax = (uint32_t) handle_create ((const char *) args[0], args[1]);
         break;
       }
     case 5: // remove
@@ -216,7 +258,9 @@ syscall_handler (struct intr_frame *f)
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_bad_addr (f);
-        handle_remove ();
+        if (!args[0]|| !valid_check((const char *) args[0]))
+          handle_bad_addr (f);
+        f->eax = (uint32_t) handle_remove ((const char *) args[0]);
         break;
       }
     case 6: // open
@@ -224,7 +268,9 @@ syscall_handler (struct intr_frame *f)
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_bad_addr (f);
-        handle_open (args[0]);
+        if (!args[0] || !valid_check((const char *) args[0]))
+          handle_bad_addr (f);
+        f->eax = handle_open ((const char *) args[0]);
         break;
       }
     case 7: // filesize
@@ -232,7 +278,7 @@ syscall_handler (struct intr_frame *f)
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_bad_addr (f);
-        handle_filesize ();
+        f->eax = handle_filesize (args[0]);
         break;
       }
     case 8: // read
@@ -247,6 +293,8 @@ syscall_handler (struct intr_frame *f)
       {
         int args[3];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
+          handle_bad_addr (f);
+        if (!args[1] || !valid_check((const char *) args[1]))
           handle_bad_addr (f);
         handle_write (args, f);
         break;
@@ -273,7 +321,7 @@ syscall_handler (struct intr_frame *f)
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_bad_addr (f);
-        handle_close ();
+        handle_close (args[0]);
         break;
       }
   }

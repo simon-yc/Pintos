@@ -111,6 +111,8 @@ struct thread
     struct semaphore wait_lock;         /* lock for wait */
     struct semaphore exit_lock;         /* lock for exit */
 
+    struct list opened_files;              /* list of files */
+    int fd;                             /* file descriptor */
   };
 
 /* If false (default), use round-robin scheduler.
