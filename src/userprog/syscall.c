@@ -53,15 +53,15 @@ valid_check (const void *usrc_)
 static bool
 copy_in (void *dst_, const void *usrc_, size_t size)
 {
-  // error checking if address is valid
-  if (!valid_check (usrc_))
-    return false;
-
   uint8_t *dst = dst_;
   const uint8_t *usrc = usrc_;
 
   for (; size > 0; size--, dst++, usrc++)
-    *dst = get_user (usrc);
+    // error checking if address is valid
+    if (!valid_check (usrc_))
+      return false;
+    else
+      *dst = get_user (usrc);
   return true;
 }
 
