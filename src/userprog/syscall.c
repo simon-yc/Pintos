@@ -64,18 +64,11 @@ copy_in (void *dst_, const void *usrc_, size_t size)
 
   for (; size > 0; size--, dst++, usrc++)
     // error checking if address is valid
-    if (!valid_check (usrc_))
+    if (!valid_check (usrc))
       return false;
     else
       *dst = get_user (usrc);
   return true;
-}
-
-static void
-handle_bad_addr (struct intr_frame *f)
-{
-  thread_current ()->exit_code = -1;
-  thread_exit ();
 }
 
 static struct file*
@@ -273,9 +266,9 @@ syscall_handler (struct intr_frame *f)
 {
   unsigned syscall_number;
   //extract the syscall number
-  if (!copy_in (&syscall_number, f->esp, sizeof syscall_number))
+  if (!copy_in (&syscall_number, (const void *) f->esp, sizeof syscall_number))
     {
-      handle_bad_addr (f);
+      handle_exit (-1);
     }
   // printf("  ***syscall number: %u \n", syscall_number);
 
@@ -289,7 +282,7 @@ syscall_handler (struct intr_frame *f)
       {
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_bad_addr (f);
+          handle_exit (-1);
         handle_exit (args[0]);
         break;
       }
@@ -297,9 +290,9 @@ syscall_handler (struct intr_frame *f)
       {
   	    int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_bad_addr (f);
+          handle_exit (-1);
         if (!valid_check((const char *) args[0]))
-          handle_bad_addr (f);
+          handle_exit (-1);
         f->eax = (uint32_t) handle_exec ((const char *) args[0]);
         break;
       }
@@ -307,7 +300,7 @@ syscall_handler (struct intr_frame *f)
       {
   	    int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_bad_addr (f);
+          handle_exit (-1);
         f->eax = (uint32_t) process_wait (args[0]);
         break;
       }
@@ -315,9 +308,9 @@ syscall_handler (struct intr_frame *f)
       {
         int args[2];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 2))
-          handle_bad_addr (f);
+          handle_exit (-1);
         if (!valid_check((const char *) args[0]))
-          handle_bad_addr (f);
+          handle_exit (-1);
         f->eax = (uint32_t) handle_create ((const char *) args[0], args[1]);
         break;
       }
@@ -325,9 +318,9 @@ syscall_handler (struct intr_frame *f)
       {
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_bad_addr (f);
+          handle_exit (-1);
         if (!valid_check((const char *) args[0]))
-          handle_bad_addr (f);
+          handle_exit (-1);
         f->eax = (uint32_t) handle_remove ((const char *) args[0]);
         break;
       }
@@ -335,9 +328,9 @@ syscall_handler (struct intr_frame *f)
       {
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_bad_addr (f);
+          handle_exit (-1);
         if (!valid_check((const char *) args[0]))
-          handle_bad_addr (f);
+          handle_exit (-1);
         f->eax = handle_open ((const char *) args[0]);
         break;
       }
@@ -345,7 +338,7 @@ syscall_handler (struct intr_frame *f)
       {
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_bad_addr (f);
+          handle_exit (-1);
         f->eax = handle_filesize (args[0]);
         break;
       }
@@ -353,9 +346,9 @@ syscall_handler (struct intr_frame *f)
       {
         int args[3];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
-          handle_bad_addr (f);
+          handle_exit (-1);
         if (!valid_check((const char *) args[1]))
-          handle_bad_addr (f);
+          handle_exit (-1);
         f->eax = handle_read (args[0], (void *) args[1], (unsigned) args[2]);
         break;
       }
@@ -363,9 +356,9 @@ syscall_handler (struct intr_frame *f)
       {
         int args[3];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
-          handle_bad_addr (f);
+          handle_exit (-1);
         if (!valid_check((const char *) args[1]))
-          handle_bad_addr (f);
+          handle_exit (-1);
         f->eax = handle_write (args[0], (void *) args[1], (unsigned) args[2]);
         break;
       }
@@ -373,7 +366,7 @@ syscall_handler (struct intr_frame *f)
       {
         int args[2];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 2))
-          handle_bad_addr (f);
+          handle_exit (-1);
         handle_seek (args[0], args[1]);
         break;
       }
@@ -381,7 +374,7 @@ syscall_handler (struct intr_frame *f)
       {
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_bad_addr (f);
+          handle_exit (-1);
         f->eax = handle_tell (args[0]);
         break;
       }
@@ -389,7 +382,7 @@ syscall_handler (struct intr_frame *f)
       {
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_bad_addr (f);
+          handle_exit (-1);
         handle_close (args[0]);
         break;
       }
