@@ -78,6 +78,23 @@ handle_bad_addr (struct intr_frame *f)
   thread_exit ();
 }
 
+static struct file*
+find_opened_file (int fd)
+{
+  struct thread *cur = thread_current();
+  struct list_elem *e;
+  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+       e = list_next (e))
+    {
+      struct opened_file *f = list_entry (e, struct opened_file, file_elem);
+      if (fd == f->fd)
+        {
+          return f->file;
+        }
+    }
+  return NULL;
+}
+
 static void
 handle_halt (void)
 {
@@ -143,18 +160,12 @@ static int
 handle_filesize (int fd)
 {
   lock_acquire(&filesys_lock);
-  struct thread *cur = thread_current();
-  struct list_elem *e;
   int size = -1; 
   /* find file with fd = fd in current thread's opened files list. */
-  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
-       e = list_next (e))
+  struct file *file = find_opened_file (fd);
+  if (file)
     {
-      struct opened_file *f = list_entry (e, struct opened_file, file_elem);
-      if (fd == f->fd)
-        {
-          size = file_length(f->file);
-        }
+      size = file_length(file);
     }
   lock_release(&filesys_lock);
   return size;
@@ -175,20 +186,8 @@ handle_read (int fd, void *buffer, unsigned size)
   else 
     {
       lock_acquire(&filesys_lock);
-      struct file *file = NULL;
-      struct thread *cur = thread_current();
-      struct list_elem *e;
       /* find file with fd = fd in current thread's opened files list. */
-      for (e = list_begin (&cur->opened_files); e != list_end (&cur->
-                                                               opened_files);
-          e = list_next (e))
-        {
-          struct opened_file *f = list_entry (e, struct opened_file, file_elem);
-          if (fd == f->fd)
-            {
-              file = f->file;
-            }
-        }
+      struct file *file = find_opened_file (fd);
       if (!file)
         {
           lock_release(&filesys_lock);
@@ -211,20 +210,8 @@ handle_write (int fd, void *buffer, unsigned size)
   else
     {
       lock_acquire(&filesys_lock);
-      struct file *file = NULL;
-      struct thread *cur = thread_current();
-      struct list_elem *e;
       /* find file with fd = fd in current thread's opened files list. */
-      for (e = list_begin (&cur->opened_files); e != list_end (&cur->
-                                                               opened_files);
-          e = list_next (e))
-        {
-          struct opened_file *f = list_entry (e, struct opened_file, file_elem);
-          if (fd == f->fd)
-            {
-              file = f->file;
-            }
-        }
+      struct file *file = find_opened_file (fd);
       if (!file)
         {
           lock_release(&filesys_lock);
