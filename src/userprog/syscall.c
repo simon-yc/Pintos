@@ -94,10 +94,9 @@ handle_exit (int status)
 static pid_t
 handle_exec (const char *cmd_line)
 {
-  tid_t child_tid = -1;
-  child_tid = process_execute (cmd_line);
-
-	return child_tid;
+  tid_t child_pid = -1;
+  child_pid = process_execute (cmd_line);
+	return child_pid;
 }
 
 static bool
@@ -130,6 +129,7 @@ handle_open (const char *file)
     }
   else
     {
+      /* Store the opened file into current thread's opened files list. */
       struct opened_file *new_file = malloc(sizeof(struct opened_file));
       new_file->file = open_file;
       new_file->fd = thread_current()->fd;
@@ -146,6 +146,7 @@ handle_filesize (int fd)
   struct thread *cur = thread_current();
   struct list_elem *e;
   int size = -1; 
+  /* find file with fd = fd in current thread's opened files list. */
   for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
        e = list_next (e))
     {
@@ -177,7 +178,9 @@ handle_read (int fd, void *buffer, unsigned size)
       struct file *file = NULL;
       struct thread *cur = thread_current();
       struct list_elem *e;
-      for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+      /* find file with fd = fd in current thread's opened files list. */
+      for (e = list_begin (&cur->opened_files); e != list_end (&cur->
+                                                               opened_files);
           e = list_next (e))
         {
           struct opened_file *f = list_entry (e, struct opened_file, file_elem);
@@ -197,11 +200,40 @@ handle_read (int fd, void *buffer, unsigned size)
     }
 }
 
-static void
-handle_write (int args[], struct intr_frame *f)
+static int
+handle_write (int fd, void *buffer, unsigned size)
 {
-  putbuf ((const char *) args[1], args[2]);
-  f->eax = args[2];
+  if (fd == STDOUT_FILENO)
+    {
+      putbuf ((const char *) buffer, size);
+      return size;
+    }
+  else
+    {
+      lock_acquire(&filesys_lock);
+      struct file *file = NULL;
+      struct thread *cur = thread_current();
+      struct list_elem *e;
+      /* find file with fd = fd in current thread's opened files list. */
+      for (e = list_begin (&cur->opened_files); e != list_end (&cur->
+                                                               opened_files);
+          e = list_next (e))
+        {
+          struct opened_file *f = list_entry (e, struct opened_file, file_elem);
+          if (fd == f->fd)
+            {
+              file = f->file;
+            }
+        }
+      if (!file)
+        {
+          lock_release(&filesys_lock);
+          return -1;
+        }
+      int bytes_write = file_write(file, buffer, size);
+      lock_release (&filesys_lock);
+      return bytes_write;
+    }
 }
 
 static void
@@ -331,7 +363,7 @@ syscall_handler (struct intr_frame *f)
           handle_bad_addr (f);
         if (!valid_check((const char *) args[1]))
           handle_bad_addr (f);
-        handle_write (args, f);
+        f->eax = handle_write (args[0], (void *) args[1], (unsigned) args[2]);
         break;
       }
     case 10:  // seek

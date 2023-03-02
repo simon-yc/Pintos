@@ -58,3 +58,4 @@ Mkfile.old
 dkms.conf
 .vscode/launch.json
 docker-compose.yml
+.vscode/settings.json
