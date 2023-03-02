@@ -214,25 +214,39 @@ handle_write (int fd, void *buffer, unsigned size)
       struct file *file = find_opened_file (fd);
       if (!file)
         {
-          lock_release(&filesys_lock);
+          lock_release (&filesys_lock);
           return -1;
         }
-      int bytes_write = file_write(file, buffer, size);
+      int bytes_write = file_write (file, buffer, size);
       lock_release (&filesys_lock);
       return bytes_write;
     }
 }
 
 static void
-handle_seek (void)
+handle_seek (int fd, unsigned position)
 {
-  thread_exit ();
+  lock_acquire(&filesys_lock);
+  struct file *file = find_opened_file (fd);
+  if (file)
+    {
+      file_seek (file, position);
+    }
+  lock_release (&filesys_lock);
 }
 
-static void
-handle_tell (void)
+static unsigned
+handle_tell (int fd)
 {
-  thread_exit ();
+  unsigned next = -1;
+  lock_acquire(&filesys_lock);
+  struct file *file = find_opened_file (fd);
+  if (file)
+    {
+      next = file_tell(file);
+    }
+  lock_release (&filesys_lock);
+  return next;
 }
 
 static void
@@ -260,7 +274,9 @@ syscall_handler (struct intr_frame *f)
   unsigned syscall_number;
   //extract the syscall number
   if (!copy_in (&syscall_number, f->esp, sizeof syscall_number))
-    handle_bad_addr (f);
+    {
+      handle_bad_addr (f);
+    }
   // printf("  ***syscall number: %u \n", syscall_number);
 
   switch (syscall_number) {
@@ -358,7 +374,7 @@ syscall_handler (struct intr_frame *f)
         int args[2];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 2))
           handle_bad_addr (f);
-        handle_seek ();
+        handle_seek (args[0], args[1]);
         break;
       }
     case 11:  // tell
@@ -366,7 +382,7 @@ syscall_handler (struct intr_frame *f)
         int args[1];
         if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
           handle_bad_addr (f);
-        handle_tell ();
+        f->eax = handle_tell (args[0]);
         break;
       }
     case 12:  // close
