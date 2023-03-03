@@ -41,13 +41,17 @@ process_execute (const char *file_name)
 
   /* P2 update - seperate file name from file_name */
   char *save_ptr;
-  file_name = strtok_r((char*)file_name, " ", &save_ptr);
+  char *temp_name;
+  temp_name = malloc(strlen(file_name)+1);
+  strlcpy (temp_name, file_name, strlen(file_name)+1);
+  temp_name = strtok_r((char*)temp_name, " ", &save_ptr);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (temp_name, PRI_DEFAULT, start_process, fn_copy);
+  free(temp_name);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
-  
+    palloc_free_page (fn_copy);
+
   /* P2 update - push the new thread to current thread's children list */
   struct thread *child = get_thread (tid);
   if (child != NULL) 
