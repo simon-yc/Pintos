@@ -106,10 +106,12 @@ struct thread
     struct list children;               /* Thread's children list */
     struct list_elem childelem;         /* List element for children list */
     int exit_code;                      /* Hold thread's exit code. */
+    int load_status;                    /* Hold thread's load status */
     int waiting_status;                 /* 1 if process_wait() has already been 
                                            successfully called. 0 otherwise */
     struct semaphore wait_lock;         /* lock for wait */
     struct semaphore exit_lock;         /* lock for exit */
+    struct semaphore load_lock;         /* lock for load */
 
     struct list opened_files;              /* list of files */
     int fd;                             /* file descriptor */

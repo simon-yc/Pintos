@@ -467,9 +467,11 @@ init_thread (struct thread *t, const char *name, int priority)
   /* P2 update */
   t->exit_code = -1;
   t->waiting_status = 0;
+  t->load_status = 0;
   list_init (&t->children);
   sema_init (&t->wait_lock, 0);
   sema_init (&t->exit_lock, 0);
+  sema_init (&t->load_lock, 0);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

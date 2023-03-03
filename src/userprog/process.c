@@ -50,8 +50,13 @@ process_execute (const char *file_name)
   
   /* P2 update - push the new thread to current thread's children list */
   struct thread *child = get_thread (tid);
-  if (child != NULL) {
+  if (child != NULL) 
+  {
     list_push_back (&thread_current()->children, &child->childelem);
+    sema_down (&child->load_lock);
+    if(child->load_status == -1) {
+      tid = -1;
+    }
   }
 
   return tid;
@@ -75,9 +80,14 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
+  struct thread *cur = thread_current();
+  sema_up (&cur->load_lock);
   if (!success) 
-    thread_exit ();
-
+    {
+      cur->load_status = -1;
+      thread_exit ();
+    }
+  
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
