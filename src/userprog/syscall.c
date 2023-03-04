@@ -14,6 +14,7 @@
 #include "devices/input.h"
 
 static void syscall_handler (struct intr_frame *);
+static void handle_close(int fd);
 
 void
 syscall_init (void) 
@@ -98,6 +99,9 @@ static void
 handle_exit (int status)
 {
   thread_current ()->exit_code = status;
+  /* Allow writes to file not in use as executables */
+  if (thread_current()->file_exec)
+    handle_close(2);
   thread_exit ();
 }
 
@@ -141,9 +145,9 @@ handle_open (const char *file)
     {
       /* Store the opened file into current thread's opened files list. */
       struct opened_file *new_file = malloc(sizeof(struct opened_file));
+      thread_current()->fd++;
       new_file->file = open_file;
       new_file->fd = thread_current()->fd;
-      thread_current()->fd++;
       list_push_back(&thread_current()->opened_files, &new_file->file_elem);
       return new_file->fd;
     }
@@ -256,6 +260,7 @@ handle_close (int fd)
         {
           list_remove(&f->file_elem);
           file_close(f->file);
+          cur->fd--;
         }
     }
   lock_release(&filesys_lock);
@@ -386,5 +391,7 @@ syscall_handler (struct intr_frame *f)
         handle_close (args[0]);
         break;
       }
+    default:
+      handle_exit(-1);
   }
 }

@@ -115,6 +115,8 @@ struct thread
 
     struct list opened_files;              /* list of files */
     int fd;                             /* file descriptor */
+    bool file_exec;                     /* deny writes to files in use as 
+                                           executables*/
   };
 
 /* If false (default), use round-robin scheduler.

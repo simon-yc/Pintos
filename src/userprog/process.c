@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -314,6 +315,16 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
+  if (!t->file_exec)
+    {
+      t->file_exec = true;
+      struct opened_file *thread_file_temp = malloc(sizeof(struct opened_file));
+      thread_file_temp->file = file;
+      thread_file_temp->fd = t->fd;
+      list_push_back (&thread_current()->opened_files, &thread_file_temp->file_elem);
+      file_deny_write(file);
+    }
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -397,7 +408,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
   return success;
 }
 

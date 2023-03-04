@@ -478,6 +478,7 @@ init_thread (struct thread *t, const char *name, int priority)
   intr_set_level (old_level);
 
   t->fd = 2;
+  t->file_exec = false;
   list_init(&t->opened_files);
 }
 
