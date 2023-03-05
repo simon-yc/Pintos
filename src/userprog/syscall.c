@@ -91,7 +91,6 @@ handle_exit (int status)
   while (thread_current()->fd > 1)
     {
       handle_close(thread_current()->fd);
-      thread_current()->fd--;
     }
   thread_exit ();
 }
