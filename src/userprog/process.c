@@ -543,6 +543,7 @@ store_arguments (void **esp, const char *file_name, char **save_ptr)
           argv = realloc(argv, argv_n*sizeof(char*));
         }
     }  
+  free(token);
 
   // set zero for allignment and fake return address
   int* zero = malloc(sizeof(int*));

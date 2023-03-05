@@ -15,5 +15,6 @@ struct opened_file {
 void syscall_init (void);
 
 struct lock filesys_lock;
+void handle_exit(int status);
 
 #endif /* userprog/syscall.h */

@@ -36,18 +36,6 @@ get_user(const uint8_t *uaddr)
   return result;
 }
 
-/* Writes BYTE to user address UDST. 
-   UDST must be below PHYS_BASE. 
-   RETURNS true if successful, false if a segfault occured. */
-static bool
-put_user (uint8_t *udst, uint8_t byte)
-{
-  int error_code;
-  asm ("movl $1f, %0; movb %b2, %1; 1:"
-        : "=&a" (error_code), "=m" (*udst) : "q" (byte));
-  return error_code != -1;
-}
-
 static bool
 valid_check (const void *usrc_)
 {
@@ -95,13 +83,16 @@ handle_halt (void)
   shutdown_power_off ();
 }
 
-static void
+void
 handle_exit (int status)
 {
   thread_current ()->exit_code = status;
   /* Allow writes to file not in use as executables */
-  if (thread_current()->file_exec)
-    handle_close(2);
+  while (thread_current()->fd > 1)
+    {
+      handle_close(thread_current()->fd);
+      thread_current()->fd--;
+    }
   thread_exit ();
 }
 
@@ -261,6 +252,8 @@ handle_close (int fd)
           list_remove(&f->file_elem);
           file_close(f->file);
           cur->fd--;
+          free(f);
+          break;
         }
     }
   lock_release(&filesys_lock);

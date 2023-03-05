@@ -150,8 +150,9 @@ page_fault (struct intr_frame *f)
 
   if (!user)
    {
-      f->eip = f->eax;
+      f->eip = (void (*)(void))f->eax;
       f->eax = 0xffffffff;
+      thread_exit ();
    }
 
   /* To implement virtual memory, delete the rest of the function
