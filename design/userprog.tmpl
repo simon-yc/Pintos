@@ -30,19 +30,61 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+None
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe how you implemented argument parsing.  How do
 >> you arrange for the elements of argv[] to be in the right order?
 >> How do you avoid overflowing the stack page?
 
+We first used strtok_r() to parse the given command line and get the filename.  
+Then we added a new function store_arguments to store arguments. This function 
+is called inside the function setup_stack. Inside the store_arguments function,
+function, initialize the value argc to 0, which represent the current number  
+of arguments added to the stack, then starting with adding arguments into the  
+stack, we first use strtok_r() to parse an argument, set esp to the correct  
+address location by: *esp -= strlen(token) + 1; then use memcpy to copy current
+argv to stack. In this process, we also store current argument's address into  
+a list that keeps track of all arguments address, so they can be added to the  
+stack later on. Each time an argument is added to the stack, increase  
+argc by 1. Repeat this process until no more arguments are left. After storing 
+all arguments, round the stack pointer down to a multiple of 4 if the address 
+is not aligned. Then, for each argument's address, starting with the last 
+argument, set *esp -= sizeof(char*), then added the address to the stack.  
+This will arrange the elements of argv[] to be in the right order. At the end, 
+push argv, argc and a fake address to the stack. 
+To avoid overflowing the stack page, we set a limit to the number of arguments  
+that can be pushed into the stack, and if the number of arguments exceeds the 
+limit, setup stack will be set to not successful.
+
 ---- RATIONALE ----
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
 
+Since strtok() uses a static pointer to keep track of its parsing, if 
+multiple threads call strtok() at the same time, it could lead to unexpected 
+behaviour. In contrast, strtok_r() does not use a static pointer, rather, 
+each call will have its own context pointer. Therefore, Pintos implements 
+strtok_r() but not strtok() because the latter is not thread-safe. 
+
 >> A4: In Pintos, the kernel separates commands into a executable name
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
+
+One advantage of the Unix approach is that it reduces the amount of 
+responsibility the kernel has. Instead of having the kernel manage both 
+the parsing along with the command execution, separating these two tasks 
+may lead to a system that is simpler and easier to maintain. 
+
+Another advantage of the Unix approach is that since the shell does the 
+separation, this allows for greater flexibility in command parsing. This 
+approach gives the users the ability to introduce and customize their own 
+parsing rules or use different shells with different parsing rules. As a
+result, users have more control over how commands are interpreted and 
+executed on the system. If the kernel did the separation, there will be 
+many limitations for the users in terms of customizing command parsing 
+since work involving the kernel is so restrictive. 
 
                  SYSTEM CALLS
                  ============
@@ -53,14 +95,91 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+Added to struct thread:
+
+    /* Used to keep track of children threads */
+    struct list children;               /* Thread's children list */
+    struct list_elem childelem;         /* List element for children list */
+
+    /* Keep track of the process status of exit, load, and waiting. */
+    int exit_code;                      /* Hold thread's exit code. */
+    int load_status;                    /* Hold thread's load status */
+    int waiting_status;                 /* 1 if process_wait() has already been 
+                                           successfully called. 0 otherwise */
+                                           
+    /* locks for wait and exit to allow parent wait for children to finish and 
+       exit*/
+    struct semaphore wait_lock;         /* lock for wait */
+    struct semaphore exit_lock;         /* lock for exit */
+
+    /* lock for load files to check for file loading status or errors. */
+    struct semaphore load_lock;         /* lock for load */
+    
+    /* fields added for files: a list to keep track of files opened by the 
+       treads, an integer fd to keep track of what the next file descriptor 
+       should be, and boolean file_exec to deny writes to files in use as 
+       executables*/
+    struct list opened_files;           /* list of files */
+    int fd;                             /* file descriptor */
+    bool file_exec;                     /* deny writes to files in use as 
+                                           executables*/
+
+Added new stuct opened_file:
+	
+    struct opened_file {
+        int fd;                         /* file descriptor of the opened file */
+        struct file *file;              /* file field for the opened file 
+                                           struct */
+        struct list_elem file_elem;     /* file element for the file list */
+    };    
+                                     
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
 >> single process?
 
+In each process there is a opened_file list called opened_files, where
+opened_file contains two fields:
+    1. file descriptor
+    2. actual file returned by filesys_open()
+In each thread struct, it has a opened_files list to keep track of all files 
+opened by it, and it has a field “fd” for file descriptor, where it is 
+initialized to 2, and for each file being opened, the thread assigns a fd to the 
+new file starting from 3, then increase fd by 1. It does not start with 2 
+because 2 is saved for deny writes to itself in the future. I.e, when a process 
+opens a file, handle_open() system call will call the method filesys_open() to 
+open the file. Each actual file returned by filesys_open() will be assigned a 
+unique file descriptor by the current process to form an object of type struct 
+opened_file which will be stored in the opened files list of the current thread.
+
+File descriptors are unique just within a single process, where each process 
+keeps track of it's own fd. In different process, the same file descriptor may 
+refer to different files.
+
+
 ---- ALGORITHMS ----
 
 >> B3: Describe your code for reading and writing user data from the
->> kernel.
+>> kernel. (flora)
+
+Read: 
+	Our code reads the user data from the kernel by copy_in() function.
+	FIrst we use valid_check() function to check whether user address 
+    is valid. We check 3 things in valid_check() function.
+        1. Whether user address is null
+        2. Whether user address is below PHYS_BASE
+        3. Whether current thread’s pagedir is mapped to a physical address
+    If all requirements are meet we use get_user() function provided 
+	by document to get the user data. Then copy data to the args address.
+
+Write:
+	Our code writes the user data to the kernel mainly using memcpy() function.
+First we get an empty kernel page by using the palloc_get_page() function.
+Then we check if the return kernel virtual address is valid. If it is valid, we
+use install_page() to mapping from user virtual address to kernel virtual 
+address. Last, we pass user virtual address to store_arguments() function,
+then use memcpy() to copy data into the user virtual address which is
+mapped to kernel virtual address.
+
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -69,8 +188,32 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
 
+For a copy of a full page of data, the least possible number might be 1. The
+reason is that the full page is already mapped to the physical memory, only
+need to call pagedir_get_page() to find out where it is. The greatest possible
+number should be 2. We need an extra call to pagedir_get_page() to find out
+where to map the user space to kernel space. 
+For a copy of 2 bytes, the least number should also be 1. As explained before,
+we need to call pagedir_get_page() to find out the actual physical space of
+user date. The greatest possible number should be 2, one extra call for finding 
+a physical space to store the data.
+
+There is room for improvement. We can store recently used physical address
+in some place, therefore we do not need to call pagedir_get_page() when we
+are trying to access one data multiple times in a short time.
+
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
+
+We search through the list of the current thread's children to locate a 
+child with a matching id and a waiting status of 0. If we find the child, 
+we mark it as waiting and wait for it to exit. Once the child process 
+finishes, we remove it from the list of children and return its exit code. 
+We then signal the child process to exit by releasing its exit lock. If no 
+child process with the specified ID is found or if the child process is a
+already waiting, we return -1. This system call enables the parent process 
+to wait for its child to exit and get its exit code, interacting with process 
+termination.
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -86,12 +229,31 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
 
+Before any system calls are being made, while retrieving data for syscall  
+number and syscall arguements from the user-specified address, we checks if the
+pointer value is valid. If they are not valid, we will exit the process free  
+any temporarily allocated resources that has been allocated, so it prevents any  
+errors relating to this. For example, it the a write system call is called, but 
+the pointer values of its arguements are not valid, this will be detected 
+inside the function valid_check when getting arguments. If such case happens, 
+the process will exit with status code being -1, and any opened files will be 
+closed.
+
+
+
 ---- SYNCHRONIZATION ----
 
 >> B7: The "exec" system call returns -1 if loading the new executable
 >> fails, so it cannot return before the new executable has completed
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
+
+The code ensures this by using synchronization primitives, that being 
+semaphores. In the handle_exec system call, we call process_execute.
+In process_execute, we create a child thread. However, before returning, 
+we call sema_down which will wait for the executable to load. The load 
+success/failure status is passed back to the thread via the child thread id; 
+-1 represents failure, otherwise the call was successful.
 
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
@@ -100,16 +262,57 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
 
+To ensure proper synchronization and avoid race conditions when P calls wait(C) 
+before C exits, we use a semaphore to ensure that P waits  until C has 
+terminated before retrieving its exit status and free memory associated with C. 
+When C exits, we remove it from the child list of thread  P, so the call wait(C)
+will not do anything since C no longer exists.   
+
+We ensure that all resources are freed in each case as thread P is responsible 
+that all its child threads exit and freed before it itself exits. From our  
+implementation, it is not possible that P terminates before the child thread C 
+exits. 
+
 ---- RATIONALE ----
 
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
 
+We choose to implement access to user memory from the kernel by verify the 
+validity of a user-provided pointer first, before dereferencing it. If the 
+pointer is invalid, we will handle it to exit with the exit code being -1. We 
+choose this implementation because it is the simplest way to handle user memory 
+access compared to only checking if the user pointer points below PHYS_BASE, 
+which requires modifying the code for page_fault(). 
+
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
 
+Advantages:
+    1. It helps improve efficiency for using files. By storing files opened 
+       by current process in each process, it saves time for looking for files. 
+       We do not need to look through all the files.
+    2. It helps with flexibility. By having unique file descriptors for each
+       process, allows each process to work with multiple files and work with
+       those files independently from other processes.
+    3. It helps with security. By only storing files opened by current 
+       process in each process, we ensure that each process only access part
+       of the file descriptor table. Every process has no access to other files 
+       it's not used.
+
+disadvantages:
+    1. It increases memory storage. For each thread we have to store a list of 
+       opened files and its file descriptors.
+    2. It increases complexity. Each process have unique file descriptors, we
+       need to check invalid file descriptors differently for each process.
+       When we try to debugging for the system, it is also hard to find out 
+       which process is using which files, because they have different file 
+       descriptors for files.
+
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+
+We didn't change the default tid_t to pid_t mapping.
 
                SURVEY QUESTIONS
                ================
