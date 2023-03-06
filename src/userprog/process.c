@@ -280,7 +280,7 @@ static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
-static void store_arguments (void **esp, const char *file_name, 
+static bool store_arguments (void **esp, const char *file_name, 
                               char **save_ptr);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
@@ -520,12 +520,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 }
 
 /* P2 update - helper function for argument passing */
-static void
+static bool
 store_arguments (void **esp, const char *file_name, char **save_ptr)
 {
   char *token;
   int argc = 0;
   int argv_n = 2;
+  int max_argc = 64;
   char** argv = malloc(argv_n*sizeof(char*));
 
   for (token = (char*)file_name; token != NULL;
@@ -534,7 +535,11 @@ store_arguments (void **esp, const char *file_name, char **save_ptr)
       *esp -= strlen(token) + 1;
       argv[argc] = *esp;  // set argv[i] to store argv i's address
       argc ++;
-
+      if (argc >= max_argc)
+        {
+          free(argv);
+          return false;
+        }
       memcpy(*esp, token, strlen(token)+1); // copy current argv to stack
       /* if need more space for argv, increase the size using realloc */
       if (argc >= argv_n)
@@ -569,9 +574,9 @@ store_arguments (void **esp, const char *file_name, char **save_ptr)
   *esp -= sizeof(void*);
   memcpy(*esp, &zero, sizeof (void*));  // push fake return address
   // check
-  // hex_dump((uintptr_t)PHYS_BASE-32, *esp, 32, 1);
   free(argv);
   free(zero);
+  return true;
 }
 
 /* Create a minimal stack by mapping a zeroed page at the top of
@@ -596,7 +601,8 @@ setup_stack (void **esp, const char *file_name, char **save_ptr)
     }
 
   /* Project 2 update - store arguments */
-  store_arguments (esp, file_name, save_ptr);
+  if (!store_arguments (esp, file_name, save_ptr))
+    success = false;
   return success;
 }
 
