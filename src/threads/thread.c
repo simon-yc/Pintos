@@ -464,7 +464,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
-  /* P2 update */
+  /* P2 update - initialize struct */
   t->exit_code = -1;
   t->waiting_status = 0;
   t->load_status = 0;
@@ -477,9 +477,10 @@ init_thread (struct thread *t, const char *name, int priority)
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
 
+  /* initialize fd to 2 because 0 and 1 are for standard in and out */
   t->fd = 2;
   t->file_exec = false;
-  list_init(&t->opened_files);
+  list_init (&t->opened_files);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -596,7 +597,7 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-/* P2 updates */
+/* P2 updates - get thread from tid. */
 struct thread *
 get_thread (tid_t tid)
 {

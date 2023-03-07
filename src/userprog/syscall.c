@@ -12,9 +12,13 @@
 #include "filesys/filesys.h"
 #include <list.h>
 #include "devices/input.h"
+#include "threads/malloc.h"
 
 static void syscall_handler (struct intr_frame *);
-static void handle_close(int fd);
+static int get_user(const uint8_t *uaddr);
+static bool valid_check (const void *usrc_);
+static bool copy_in (void *dst_, const void *usrc_, size_t size);
+static struct file *find_opened_file (int fd);
 
 void
 syscall_init (void) 
@@ -36,15 +40,18 @@ get_user(const uint8_t *uaddr)
   return result;
 }
 
+/* P2 update - helper function to validate user provided pointer value address 
+   before using. */
 static bool
 valid_check (const void *usrc_)
 {
-  if (usrc_ == NULL || !is_user_vaddr(usrc_) ||
+  if (usrc_ == NULL || !is_user_vaddr (usrc_) ||
       pagedir_get_page (thread_current ()->pagedir, usrc_) == NULL)
     return false;
 	return true;
 }
 
+/* P2 update - helper function for reading user address. */
 static bool
 copy_in (void *dst_, const void *usrc_, size_t size)
 {
@@ -52,7 +59,7 @@ copy_in (void *dst_, const void *usrc_, size_t size)
   const uint8_t *usrc = usrc_;
 
   for (; size > 0; size--, dst++, usrc++)
-    // error checking if address is valid
+    /* error checking if address is valid */
     if (!valid_check (usrc))
       return false;
     else
@@ -60,10 +67,12 @@ copy_in (void *dst_, const void *usrc_, size_t size)
   return true;
 }
 
+/* P2 update - helper function for finding file with file descriptor = fd 
+   opened from the current thread */
 static struct file*
 find_opened_file (int fd)
 {
-  struct thread *cur = thread_current();
+  struct thread *cur = thread_current ();
   struct list_elem *e;
   for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
        e = list_next (e))
@@ -77,25 +86,28 @@ find_opened_file (int fd)
   return NULL;
 }
 
-static void
+/* P2 update - system call for halt */
+void
 handle_halt (void)
 {
   shutdown_power_off ();
 }
 
+/* P2 update - system call for exit */
 void
 handle_exit (int status)
 {
   thread_current ()->exit_code = status;
   /* Allow writes to file not in use as executables */
-  while (thread_current()->fd > 1)
+  while (thread_current ()->fd > 1)
     {
-      handle_close(thread_current()->fd);
+      handle_close(thread_current ()->fd);
     }
   thread_exit ();
 }
 
-static pid_t
+/* P2 update - system call for exec */
+pid_t
 handle_exec (const char *cmd_line)
 {
   tid_t child_pid = -1;
@@ -103,90 +115,86 @@ handle_exec (const char *cmd_line)
 	return child_pid;
 }
 
-static bool
-handle_create (const char* file, unsigned initial_size)
+/* P2 update - system call for create */
+bool
+handle_create (const char *file, unsigned initial_size)
 {
-  lock_acquire(&filesys_lock);
-  bool success = filesys_create(file, initial_size);
-  lock_release(&filesys_lock);
+  lock_acquire (&filesys_lock);
+  bool success = filesys_create (file, initial_size);
+  lock_release (&filesys_lock);
   return success;
 }
 
-static bool
-handle_remove (const char* file)
+/* P2 update - system call for remove */
+bool
+handle_remove (const char *file)
 {
-  lock_acquire(&filesys_lock);
-  bool success = filesys_remove(file);
-  lock_release(&filesys_lock);
+  lock_acquire (&filesys_lock);
+  bool success = filesys_remove (file);
+  lock_release (&filesys_lock);
   return success;
 }
 
-static int
+/* P2 update - system call for open */
+int
 handle_open (const char *file)
 {
-  lock_acquire(&filesys_lock);
-  struct file *open_file = filesys_open(file);
-  lock_release(&filesys_lock);
+  lock_acquire (&filesys_lock);
+  struct file *open_file = filesys_open (file);
+  lock_release (&filesys_lock);
   if (open_file == NULL)
-    {
-      return -1;
-    }
-  else
-    {
-      /* Store the opened file into current thread's opened files list. */
-      struct opened_file *new_file = malloc(sizeof(struct opened_file));
-      thread_current()->fd++;
-      new_file->file = open_file;
-      new_file->fd = thread_current()->fd;
-      list_push_back(&thread_current()->opened_files, &new_file->file_elem);
-      return new_file->fd;
-    }
+    return -1;
+
+  /* Store the opened file into current thread's opened files list. */
+  struct opened_file *new_file = malloc (sizeof (struct opened_file));
+  thread_current ()->fd++;
+  new_file->file = open_file;
+  new_file->fd = thread_current ()->fd;
+  list_push_back (&thread_current ()->opened_files, &new_file->file_elem);
+  return new_file->fd;
 }
 
-static int
+/* P2 update - system call for filesize */
+int
 handle_filesize (int fd)
 {
-  lock_acquire(&filesys_lock);
+  lock_acquire (&filesys_lock);
   int size = -1; 
   /* find file with fd = fd in current thread's opened files list. */
   struct file *file = find_opened_file (fd);
   if (file)
-    {
-      size = file_length(file);
-    }
-  lock_release(&filesys_lock);
+    size = file_length (file);
+  lock_release (&filesys_lock);
   return size;
 }
 
-static int
+/* P2 update - system call for read */
+int
 handle_read (int fd, void *buffer, unsigned size)
 {
   if (fd == STDIN_FILENO)
     {
       uint8_t *temp_buf = (uint8_t *) buffer;
       for (unsigned i = 0; i < size; i ++)
-        {
-          temp_buf[i] = input_getc();
-        }
+        temp_buf[i] = input_getc ();
       return size;
     }
-  else 
+  lock_acquire (&filesys_lock);
+
+  /* find file with fd = fd in current thread's opened files list. */
+  struct file *file = find_opened_file (fd);
+  if (!file)
     {
-      lock_acquire(&filesys_lock);
-      /* find file with fd = fd in current thread's opened files list. */
-      struct file *file = find_opened_file (fd);
-      if (!file)
-        {
-          lock_release(&filesys_lock);
-          return -1;
-        }
-      int bytes_read = file_read(file, buffer, size);
       lock_release (&filesys_lock);
-      return bytes_read;
+      return -1;
     }
+  int bytes_read = file_read (file, buffer, size);
+  lock_release (&filesys_lock);
+  return bytes_read;
 }
 
-static int
+/* P2 update - system call for write */
+int
 handle_write (int fd, void *buffer, unsigned size)
 {
   if (fd == STDOUT_FILENO)
@@ -194,53 +202,50 @@ handle_write (int fd, void *buffer, unsigned size)
       putbuf ((const char *) buffer, size);
       return size;
     }
-  else
+  lock_acquire (&filesys_lock);
+
+  /* find file with fd = fd in current thread's opened files list. */
+  struct file *file = find_opened_file (fd);
+  if (!file)
     {
-      lock_acquire(&filesys_lock);
-      /* find file with fd = fd in current thread's opened files list. */
-      struct file *file = find_opened_file (fd);
-      if (!file)
-        {
-          lock_release (&filesys_lock);
-          return -1;
-        }
-      int bytes_write = file_write (file, buffer, size);
       lock_release (&filesys_lock);
-      return bytes_write;
+      return -1;
     }
+  int bytes_write = file_write (file, buffer, size);
+  lock_release (&filesys_lock);
+  return bytes_write;
 }
 
-static void
+/* P2 update - system call for seek */
+void
 handle_seek (int fd, unsigned position)
 {
-  lock_acquire(&filesys_lock);
+  lock_acquire (&filesys_lock);
   struct file *file = find_opened_file (fd);
   if (file)
-    {
-      file_seek (file, position);
-    }
+    file_seek (file, position);
   lock_release (&filesys_lock);
 }
 
-static unsigned
+/* P2 update - system call for tell */
+unsigned
 handle_tell (int fd)
 {
   unsigned next = -1;
-  lock_acquire(&filesys_lock);
+  lock_acquire (&filesys_lock);
   struct file *file = find_opened_file (fd);
   if (file)
-    {
-      next = file_tell(file);
-    }
+    next = file_tell (file);
   lock_release (&filesys_lock);
   return next;
 }
 
-static void
+/* P2 update - system call for close */
+void
 handle_close (int fd)
 {
-  lock_acquire(&filesys_lock);
-  struct thread *cur = thread_current();
+  lock_acquire (&filesys_lock);
+  struct thread *cur = thread_current ();
   struct list_elem *e;
   for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
        e = list_next (e))
@@ -248,142 +253,141 @@ handle_close (int fd)
       struct opened_file *f = list_entry (e, struct opened_file, file_elem);
       if (fd == f->fd)
         {
-          list_remove(&f->file_elem);
-          file_close(f->file);
+          list_remove (&f->file_elem);
+          file_close (f->file);
           cur->fd--;
-          free(f);
+          free (f);
           break;
         }
     }
-  lock_release(&filesys_lock);
+  lock_release (&filesys_lock);
 }
 
 static void
 syscall_handler (struct intr_frame *f) 
 {
   unsigned syscall_number;
-  //extract the syscall number
-  if (!copy_in (&syscall_number, (const void *) f->esp, sizeof syscall_number))
-    {
-      handle_exit (-1);
-    }
-  // printf("  ***syscall number: %u \n", syscall_number);
 
-  switch (syscall_number) {
-  	case 0: // halt
-      {
-        handle_halt ();
-        break;
-      }
-    case 1: // exit
-      {
-        int args[1];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (-1);
-        handle_exit (args[0]);
-        break;
-      }
-    case 2: // exec
-      {
-  	    int args[1];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (-1);
-        if (!valid_check((const char *) args[0]))
-          handle_exit (-1);
-        f->eax = (uint32_t) handle_exec ((const char *) args[0]);
-        break;
-      }
-    case 3: // wait
-      {
-  	    int args[1];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (-1);
-        f->eax = (uint32_t) process_wait (args[0]);
-        break;
-      }
-    case 4: // create
-      {
-        int args[2];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 2))
-          handle_exit (-1);
-        if (!valid_check((const char *) args[0]))
-          handle_exit (-1);
-        f->eax = (uint32_t) handle_create ((const char *) args[0], args[1]);
-        break;
-      }
-    case 5: // remove
-      {
-        int args[1];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (-1);
-        if (!valid_check((const char *) args[0]))
-          handle_exit (-1);
-        f->eax = (uint32_t) handle_remove ((const char *) args[0]);
-        break;
-      }
-    case 6: // open
-      {
-        int args[1];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (-1);
-        if (!valid_check((const char *) args[0]))
-          handle_exit (-1);
-        f->eax = handle_open ((const char *) args[0]);
-        break;
-      }
-    case 7: // filesize
-      {
-        int args[1];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (-1);
-        f->eax = handle_filesize (args[0]);
-        break;
-      }
-    case 8: // read
-      {
-        int args[3];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
-          handle_exit (-1);
-        if (!valid_check((const char *) args[1]))
-          handle_exit (-1);
-        f->eax = handle_read (args[0], (void *) args[1], (unsigned) args[2]);
-        break;
-      }
-    case 9: // write
-      {
-        int args[3];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 3))
-          handle_exit (-1);
-        if (!valid_check((const char *) args[1]))
-          handle_exit (-1);
-        f->eax = handle_write (args[0], (void *) args[1], (unsigned) args[2]);
-        break;
-      }
-    case 10:  // seek
-      {
-        int args[2];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 2))
-          handle_exit (-1);
-        handle_seek (args[0], args[1]);
-        break;
-      }
-    case 11:  // tell
-      {
-        int args[1];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (-1);
-        f->eax = handle_tell (args[0]);
-        break;
-      }
-    case 12:  // close
-      {
-        int args[1];
-        if (!copy_in(args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-          handle_exit (-1);
-        handle_close (args[0]);
-        break;
-      }
-    default:
-      handle_exit(-1);
-  }
+  /* extract the syscall number */
+  if (!copy_in (&syscall_number, (const void *) f->esp, sizeof syscall_number))
+    handle_exit (-1);
+
+  switch (syscall_number) 
+    {
+      case SYS_HALT:
+        {
+          handle_halt ();
+          break;
+        }
+      case SYS_EXIT:
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          handle_exit (args[0]);
+          break;
+        }
+      case SYS_EXEC:
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          if (!valid_check ((const char *) args[0]))
+            handle_exit (-1);
+          f->eax = (uint32_t) handle_exec ((const char *) args[0]);
+          break;
+        }
+      case SYS_WAIT:
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          f->eax = (uint32_t) process_wait (args[0]);
+          break;
+        }
+      case SYS_CREATE:
+        {
+          int args[2];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2))
+            handle_exit (-1);
+          if (!valid_check ((const char *) args[0]))
+            handle_exit (-1);
+          f->eax = (uint32_t) handle_create ((const char *) args[0], args[1]);
+          break;
+        }
+      case SYS_REMOVE:
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          if (!valid_check ((const char *) args[0]))
+            handle_exit (-1);
+          f->eax = (uint32_t) handle_remove ((const char *) args[0]);
+          break;
+        }
+      case SYS_OPEN: 
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          if (!valid_check ((const char *) args[0]))
+            handle_exit (-1);
+          f->eax = handle_open ((const char *) args[0]);
+          break;
+        }
+      case SYS_FILESIZE:
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          f->eax = handle_filesize (args[0]);
+          break;
+        }
+      case SYS_READ:
+        {
+          int args[3];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3))
+            handle_exit (-1);
+          if (!valid_check ((const char *) args[1]))
+            handle_exit (-1);
+          f->eax = handle_read (args[0], (void *) args[1], (unsigned) args[2]);
+          break;
+        }
+      case SYS_WRITE:
+        {
+          int args[3];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3))
+            handle_exit (-1);
+          if (!valid_check ((const char *) args[1]))
+            handle_exit (-1);
+          f->eax = handle_write (args[0], (void *) args[1], (unsigned) args[2]);
+          break;
+        }
+      case SYS_SEEK:
+        {
+          int args[2];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2))
+            handle_exit (-1);
+          handle_seek (args[0], args[1]);
+          break;
+        }
+      case SYS_TELL:
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          f->eax = handle_tell (args[0]);
+          break;
+        }
+      case SYS_CLOSE:
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          handle_close (args[0]);
+          break;
+        }
+      default:
+        handle_exit (-1);
+    }
 }

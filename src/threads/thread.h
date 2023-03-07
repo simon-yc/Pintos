@@ -113,10 +113,10 @@ struct thread
     struct semaphore exit_lock;         /* lock for exit */
     struct semaphore load_lock;         /* lock for load */
 
-    struct list opened_files;              /* list of files */
+    struct list opened_files;           /* list of files */
     int fd;                             /* file descriptor */
     bool file_exec;                     /* deny writes to files in use as 
-                                           executables*/
+                                           executables */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -156,6 +156,6 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 /* P2 updates */
-struct thread * get_thread (tid_t tid);
+struct thread *get_thread (tid_t tid);
 
 #endif /* threads/thread.h */

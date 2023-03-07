@@ -43,26 +43,25 @@ process_execute (const char *file_name)
   /* P2 update - seperate file name from file_name */
   char *save_ptr;
   char *temp_name;
-  temp_name = malloc(strlen(file_name)+1);
-  strlcpy (temp_name, file_name, strlen(file_name)+1);
-  temp_name = strtok_r((char*)temp_name, " ", &save_ptr);
+  temp_name = malloc (strlen (file_name) + 1);
+  strlcpy (temp_name, file_name, strlen (file_name) + 1);
+  temp_name = strtok_r ((char *) temp_name, " ", &save_ptr);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (temp_name, PRI_DEFAULT, start_process, fn_copy);
-  free(temp_name);
+  free (temp_name);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
 
   /* P2 update - push the new thread to current thread's children list */
   struct thread *child = get_thread (tid);
   if (child != NULL) 
-  {
-    list_push_back (&thread_current()->children, &child->childelem);
-    sema_down (&child->load_lock);
-    if(child->load_status == -1) {
-      tid = -1;
+    {
+      list_push_back (&thread_current ()->children, &child->childelem);
+      sema_down (&child->load_lock);
+      if (child->load_status == -1)
+        tid = -1;
     }
-  }
 
   return tid;
 }
@@ -85,7 +84,9 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  struct thread *cur = thread_current();
+  struct thread *cur = thread_current ();
+
+  /* P2 update - if loading not successful, set load status to -1 and exit. */
   sema_up (&cur->load_lock);
   if (!success) 
     {
@@ -118,9 +119,9 @@ process_wait (tid_t child_tid)
   /* P2 update */
   struct list_elem *e;
   int child_exist = 0;
-  struct thread* child;
+  struct thread *child;
   /* Find the thread with child_tid in current thread's children list */
-  struct thread *cur = thread_current();
+  struct thread *cur = thread_current ();
   for (e = list_begin (&cur->children); e != list_end (&cur->children);
        e = list_next (e))
     {
@@ -137,15 +138,13 @@ process_wait (tid_t child_tid)
     }
 
   if (child_exist != 1)
-    {
       return -1;
-    }
   
   /* Wait for child process to exit */
   sema_down (&child->wait_lock);
   
   /* After child process finished, remove it from children list */
-  list_remove(&(child->childelem));
+  list_remove (&(child->childelem));
 
   int exit_code = child->exit_code;
 
@@ -163,9 +162,12 @@ process_exit (void)
   uint32_t *pd;
 
   /* P2 update */
-  printf("%s: exit(%d)\n", cur->name, cur->exit_code);
+  /* print exit status code */
+  printf ("%s: exit(%d)\n", cur->name, cur->exit_code);
+
   /* before exit, unblock the parent thread waiting for this child process */
   sema_up (&(cur->wait_lock));
+  
   /* for each child of this thread, switch thread if some not finished */
   struct list_elem *e;
   for (e = list_begin (&cur->children); e != list_end (&cur->children);
@@ -281,7 +283,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
 static bool store_arguments (void **esp, const char *file_name, 
-                              char **save_ptr);
+                             char **save_ptr);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
@@ -305,7 +307,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* P2 update - extract file name */
   char *save_ptr;
-  file_name = strtok_r((char*)file_name, " ", &save_ptr);
+  file_name = strtok_r ((char *)file_name, " ", &save_ptr);
 
   /* Open executable file. */
   file = filesys_open (file_name);
@@ -315,14 +317,17 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
+  /* P2 update - deny write to executable files. */
   if (!t->file_exec)
     {
       t->file_exec = true;
-      struct opened_file *thread_file_temp = malloc(sizeof(struct opened_file));
+      struct opened_file *thread_file_temp = malloc (sizeof (struct 
+                                                             opened_file));
       thread_file_temp->file = file;
       thread_file_temp->fd = t->fd;
-      list_push_back (&thread_current()->opened_files, &thread_file_temp->file_elem);
-      file_deny_write(file);
+      list_push_back (&thread_current ()->opened_files, 
+                      &thread_file_temp->file_elem);
+      file_deny_write (file);
     }
 
   /* Read and verify executable header. */
@@ -519,7 +524,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
-/* P2 update - helper function for argument passing */
+/* P2 update - helper function for argument parsing */
 static bool
 store_arguments (void **esp, const char *file_name, char **save_ptr)
 {
@@ -527,55 +532,65 @@ store_arguments (void **esp, const char *file_name, char **save_ptr)
   int argc = 0;
   int argv_n = 2;
   int max_argc = 64;
-  char** argv = malloc(argv_n*sizeof(char*));
+  char **argv = malloc (argv_n * sizeof (char *));
 
-  for (token = (char*)file_name; token != NULL;
+  for (token = (char *) file_name; token != NULL;
        token = strtok_r (NULL, " ", save_ptr))
     {
-      *esp -= strlen(token) + 1;
-      argv[argc] = *esp;  // set argv[i] to store argv i's address
+      *esp -= strlen (token) + 1;
+      /* set argv[i] to store argv i's address */
+      argv[argc] = *esp;  
       argc ++;
       if (argc >= max_argc)
         {
-          free(argv);
+          free (argv);
           return false;
         }
-      memcpy(*esp, token, strlen(token)+1); // copy current argv to stack
+      /* copy current argv to stack */
+      memcpy (*esp, token, strlen (token) + 1); 
       /* if need more space for argv, increase the size using realloc */
       if (argc >= argv_n)
         {
           argv_n = argv_n + 1;
-          argv = realloc(argv, argv_n*sizeof(char*));
+          argv = realloc (argv, argv_n * sizeof (char *));
         }
     }  
-  free(token);
+  free (token);
 
-  // set zero for allignment and fake return address
-  int* zero = malloc(sizeof(int*));
+  /* set zero for allignment and fake return address */
+  int *zero = malloc (sizeof (int *));
   zero = 0;
   int word_allign = (size_t) *esp % 4;
-  if (word_allign){ // if not alligned
-    *esp -= word_allign;
-    memcpy(*esp, &zero, word_allign);
-  }
 
-  argv[argc] = 0;   // set back to 0
+  /* if not aligned: */
+  if (word_allign) 
+    { 
+      *esp -= word_allign;
+      memcpy (*esp, &zero, word_allign);
+    }
+
+  /* set back to 0 */
+  argv[argc] = 0;   
   for (int i = argc; i >= 0; i--)
     {
-      *esp -= sizeof(char*);
-      memcpy (*esp, &argv[i], sizeof(char*)); // copy argv address to stack
+      *esp -= sizeof (char *);
+      /* copy argv address to stack */
+      memcpy (*esp, &argv[i], sizeof (char *)); 
     }
   
   char *argv_cur = *esp;
-  *esp -= sizeof (char**);  
-  memcpy(*esp, &argv_cur, sizeof(char*));  // push argv
+  *esp -= sizeof (char **);
+  /* push argv */  
+  memcpy (*esp, &argv_cur, sizeof (char *)); 
   *esp -= sizeof (int);
-  memcpy(*esp, &argc, sizeof(int)); // push argc
-  *esp -= sizeof(void*);
-  memcpy(*esp, &zero, sizeof (void*));  // push fake return address
+  /* push argc */
+  memcpy (*esp, &argc, sizeof (int)); 
+  *esp -= sizeof (void *);
+  /* push fake return address */
+  memcpy (*esp, &zero, sizeof (void *));  
   // check
-  free(argv);
-  free(zero);
+  free (argv);
+  free (zero);
   return true;
 }
 
@@ -595,12 +610,13 @@ setup_stack (void **esp, const char *file_name, char **save_ptr)
         *esp = PHYS_BASE;
       else
         {
+          /* P2 update - if not successful, free pafe and return. */
           palloc_free_page (kpage);
           return success;
         }
     }
 
-  /* Project 2 update - store arguments */
+  /* P2 update - store arguments */
   if (!store_arguments (esp, file_name, save_ptr))
     success = false;
   return success;
