@@ -30,7 +30,26 @@ Simon Chau <simon.chau@mail.utoronto.ca>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-None
+Added to struct thread (some of the `struct' members are shared also used in 
+the SYSTEM CALLS section):
+
+    /* Used to keep track of children threads */
+    struct list children;               /* Thread's children list */
+    struct list_elem childelem;         /* List element for children list */
+
+    /* Keep track of the process status of exit, load, and waiting. */
+    int exit_code;                      /* Hold thread's exit code. */
+    int load_status;                    /* Hold thread's load status */
+    int waiting_status;                 /* 1 if process_wait() has already been 
+                                           successfully called. 0 otherwise */
+                                           
+    /* locks for wait and exit to allow parent wait for children to finish and 
+       exit*/
+    struct semaphore wait_lock;         /* lock for wait */
+    struct semaphore exit_lock;         /* lock for exit */
+
+    /* lock for load files to check for file loading status or errors. */
+    struct semaphore load_lock;         /* lock for load */
 
 ---- ALGORITHMS ----
 
@@ -132,6 +151,9 @@ Added new stuct opened_file:
                                            struct */
         struct list_elem file_elem;     /* file element for the file list */
     };    
+
+Added global variable:
+    - struct lock filesys_lock: a lock for file access for each process. 
                                      
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
@@ -162,8 +184,9 @@ refer to different files.
 >> kernel. (flora)
 
 Read: 
-	Our code reads the user data from the kernel by copy_in() function.
-	FIrst we use valid_check() function to check whether user address 
+  - Our code reads the user data from the kernel by copy_in() function by the 
+    f->esp pointer.
+	First we use valid_check() function to check whether user address 
     is valid. We check 3 things in valid_check() function.
         1. Whether user address is null
         2. Whether user address is below PHYS_BASE
@@ -171,15 +194,34 @@ Read:
     If all requirements are meet we use get_user() function provided 
 	by document to get the user data. Then copy data to the args address.
 
-Write:
-	Our code writes the user data to the kernel mainly using memcpy() function.
-First we get an empty kernel page by using the palloc_get_page() function.
-Then we check if the return kernel virtual address is valid. If it is valid, we
-use install_page() to mapping from user virtual address to kernel virtual 
-address. Last, we pass user virtual address to store_arguments() function,
-then use memcpy() to copy data into the user virtual address which is
-mapped to kernel virtual address.
+  - For the read system call, we first get the three arguements fd, buffer, and 
+    size as described above, then after validating all the user data and 
+    addresses, our code will run the funtion handle_read to begin reading. If 
+    fd = 0, then we will be reading from standard in using the input_getc
+    function for the given size of data, and return the number of bytes read.
+    If reading from opened files, the lock filesys_lock will be acquired during 
+    the reading and will be released after the reading process finish. At the 
+    end, the number of bytes actually read will be returned. 
 
+Write:
+  - Our code writes the user data to the kernel mainly using memcpy() function. 
+    First we get an empty kernel page by using the palloc_get_page() function. 
+    Then we check if the return kernel virtual address is valid. If it is 
+    valid, we use install_page() to mapping from user virtual address to kernel 
+    virtual address. Last, we pass user virtual address to store_arguments() 
+    function, then use memcpy() to copy data into the user virtual address 
+    which is mapped to kernel virtual address.
+    When returning for syscalls, we will do so by assigning the value to f->eax.
+    
+  - For the write system call, similar to the read system call, we first get 
+    the three arguements fd, buffer, and size, then after validating all the 
+    user data and addresses, our code will run the funtion handle_write to 
+    begin writing. If fd = 1, then we will be writing to standard out using 
+    the putbuf function for the given size of data, and return the number of 
+    bytes wrote. If writing to opened files, the lock filesys_lock will be 
+    acquired during the writing process and will be released after the writing 
+    process finish. At the end, the number of bytes actually got wrote will 
+    be returned.
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
