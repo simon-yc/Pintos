@@ -302,8 +302,6 @@ call kill(f) to kill user proceess. In kill(f) case SEL_UCSEG, after output
 error message, our code calls handle_exit(-1) to handle memory free. In 
 handle_exit(-1), our code closes all opended files by calling handle_close().
 
-
-
 ---- SYNCHRONIZATION ----
 
 >> B7: The "exec" system call returns -1 if loading the new executable
@@ -375,7 +373,14 @@ disadvantages:
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
 
-We didn't change the default tid_t to pid_t mapping.
+We did not change the default tid_t to pid_t mapping. An advantage in 
+keeping it the same is simplicity. The identity mapping is a straightforward 
+approach that is easy to understand and implement.
+
+In contrast, if we did change it, there are some advantages that follow. 
+One is that it could lead to easier process management, such as if there 
+are multiple threads associated with a single process or where multiple 
+processes share a common resource.
 
                SURVEY QUESTIONS
                ================
