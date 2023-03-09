@@ -75,7 +75,9 @@ This will arrange the elements of argv[] to be in the right order. At the end,
 push argv, argc and a fake address to the stack. 
 To avoid overflowing the stack page, we set a limit to the number of arguments  
 that can be pushed into the stack, and if the number of arguments exceeds the 
-limit, setup stack will be set to not successful.
+limit, setup stack will be set to not successful. We assumed around 32 bytes 
+per argument, then: 4kB / 32 bytes = 128 arguments. Thus, the limit we had is 
+128 arguments. 
 
 ---- RATIONALE ----
 

@@ -531,7 +531,9 @@ store_arguments (void **esp, const char *file_name, char **save_ptr)
   char *token;
   int argc = 0;
   int argv_n = 2;
-  int max_argc = 64;
+  /* Limit the max number of arguments. Assume around 32 bytes per argument, 
+     then: 4kB / 32 bytes = 128 arguments */
+  int max_argc = 128;
   char **argv = malloc (argv_n * sizeof (char *));
 
   for (token = (char *) file_name; token != NULL;
