@@ -275,28 +275,23 @@ termination.
 
 We avoid obscuring the primary function of code by having seperate helper
 functions to check the validation of the user-specified address. The helper
-function will either call error handling function or copy correct value from
-user-specified address to pass in address.
+function will either copy correct value from the user-specified address to the 
+pass in address, or call error handling function if anything is wrong.
 For example:
-Before any system calls are being made, our code retrieving data for syscall  
-number from the user-specified address, we call copy_in to copy the syscall
-number into syscall_number variale, in copy_in() we checks if the pointer value 
-is valid using valid_check() function:
+If write system call is called, but the pointer values of its arguements are 
+not valid, this will be detected inside the function valid_check when getting 
+arguments, as it checks for:
         1. Whether user address is null
         2. Whether user address is below PHYS_BASE
         3. Whether current thread’s pagedir is mapped to a physical address
-If they are not valid, valid_check() and copy_in() will both return false.   
-any temporarily allocated resources that has been allocated, so it prevents any  
-errors relating to this. For example, it the a write system call is called, but 
-the pointer values of its arguements are not valid, this will be detected 
-inside the function valid_check when getting arguments. If such case happens, 
-the process will exit with status code being -1, and any opened files will be 
-closed.
+If any pointer value is not valid, valid_check() and copy_in() will both return
+false. If such case happens, the process will exit with status code being -1, 
+and any opened files will be closed by the exit syscall.
 
 We ensure that all temporarily allocated resources are freed by two strategies
     1. free allocated resources as soon as possible.
     2. handle resource free before exiting. 
-For strategy 2, there is an example:
+For strategy 2, an example would be:
 If user process has an error and calls page_fault() handler, page_fault() will
 call kill(f) to kill user proceess. In kill(f) case SEL_UCSEG, after output
 error message, our code calls handle_exit(-1) to handle memory free. In 
