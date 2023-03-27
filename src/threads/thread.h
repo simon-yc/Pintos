@@ -102,7 +102,6 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-
     /* P2 update */
     struct list children;               /* Thread's children list */
     struct list_elem childelem;         /* List element for children list */
@@ -118,9 +117,15 @@ struct thread
     int fd;                             /* file descriptor */
     bool file_exec;                     /* deny writes to files in use as 
                                            executables */
+   
     /* P3 update*/
     struct hash *sup_page_table;        /* Hash table to keep track of pages 
                                            belong to thread. */
+    void *user_esp;                     /* Stack pointer. */
+   /* P3 update timer */
+    int64_t wakeup_time;                /* Thread wake up time. */
+    struct list_elem sleepelem;         /* List element for sleeping
+	                                        threads. */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -131,7 +136,7 @@ extern bool thread_mlfqs;
 void thread_init (void);
 void thread_start (void);
 
-void thread_tick (void);
+void thread_tick (int64_t); /* P3 update */
 void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
@@ -162,4 +167,10 @@ int thread_get_load_avg (void);
 /* P2 updates */
 struct thread *get_thread (tid_t tid);
 
+
+/* P3 update */
+void insert_sleeping_list (int64_t);
+bool sleep_compare (const struct list_elem *,
+                    const struct list_elem *,
+                    void * UNUSED);
 #endif /* threads/thread.h */
