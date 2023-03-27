@@ -2,6 +2,7 @@
 #define THREADS_THREAD_H
 
 #include <debug.h>
+#include <hash.h>
 #include <list.h>
 #include <stdint.h>
 #include "threads/synch.h"
@@ -117,6 +118,9 @@ struct thread
     int fd;                             /* file descriptor */
     bool file_exec;                     /* deny writes to files in use as 
                                            executables */
+    /* P3 update*/
+    struct hash *sup_page_table;        /* Hash table to keep track of pages 
+                                           belong to thread. */
   };
 
 /* If false (default), use round-robin scheduler.

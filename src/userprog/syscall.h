@@ -4,6 +4,7 @@
 
 /* Process identifier. */
 typedef int pid_t;
+typedef int mapid_t;
 struct lock filesys_lock;
 struct opened_file {
     int fd;
@@ -25,5 +26,6 @@ int handle_write (int, void *, unsigned);
 void handle_seek (int, unsigned);
 unsigned handle_tell (int);
 void handle_close (int);
-
+mapid_t handle_mmap (int fd, void *addr);
+void handle_munmap (mapid_t mapping);
 #endif /* userprog/syscall.h */

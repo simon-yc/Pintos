@@ -13,6 +13,10 @@
 #include <list.h>
 #include "devices/input.h"
 #include "threads/malloc.h"
+#include <string.h>
+#include "vm/page.h"
+#include "threads/palloc.h"
+#include "devices/timer.h"
 
 static void syscall_handler (struct intr_frame *);
 static int get_user(const uint8_t *uaddr);
@@ -45,9 +49,13 @@ get_user(const uint8_t *uaddr)
 static bool
 valid_check (const void *usrc_)
 {
-  if (usrc_ == NULL || !is_user_vaddr (usrc_) ||
-      pagedir_get_page (thread_current ()->pagedir, usrc_) == NULL)
+  if (usrc_ == NULL || !is_user_vaddr (usrc_))
     return false;
+  if (pagedir_get_page (thread_current ()->pagedir, usrc_) == NULL)
+    {
+      if (!page_load ((void *) usrc_))
+        return false;
+    }
 	return true;
 }
 
@@ -59,11 +67,13 @@ copy_in (void *dst_, const void *usrc_, size_t size)
   const uint8_t *usrc = usrc_;
 
   for (; size > 0; size--, dst++, usrc++)
-    /* error checking if address is valid */
-    if (!valid_check (usrc))
-      return false;
-    else
-      *dst = get_user (usrc);
+    {
+      /* error checking if address is valid */
+      if (!valid_check (usrc))
+        return false;
+      else
+        *dst = get_user (usrc);
+    }
   return true;
 }
 
@@ -147,6 +157,8 @@ handle_open (const char *file)
 
   /* Store the opened file into current thread's opened files list. */
   struct opened_file *new_file = malloc (sizeof (struct opened_file));
+  if (new_file == NULL)
+    return -1;
   thread_current ()->fd++;
   new_file->file = open_file;
   new_file->fd = thread_current ()->fd;
@@ -179,6 +191,10 @@ handle_read (int fd, void *buffer, unsigned size)
         temp_buf[i] = input_getc ();
       return size;
     }
+  struct page *p = find_page (buffer);
+  if (p->read_only)
+    handle_exit (-1);
+  timer_msleep (100);
   lock_acquire (&filesys_lock);
 
   /* find file with fd = fd in current thread's opened files list. */
@@ -261,6 +277,20 @@ handle_close (int fd)
         }
     }
   lock_release (&filesys_lock);
+}
+
+/* P3 update - system call for mmap */
+mapid_t
+handle_mmap (int fd, void *addr)
+{
+  return 0;
+}
+
+/* P3 update - system call for munmap */
+void
+handle_munmap (mapid_t mapping)
+{
+  return;
 }
 
 static void
@@ -385,6 +415,22 @@ syscall_handler (struct intr_frame *f)
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
             handle_exit (-1);
           handle_close (args[0]);
+          break;
+        }
+      case SYS_MMAP:
+        {
+          int args[2];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2))
+            handle_exit (-1);
+          f->eax = handle_mmap (args[0], (void *)args[1]);
+          break;
+        }
+      case SYS_MUNMAP:
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          handle_munmap (args[0]);
           break;
         }
       default:

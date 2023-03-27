@@ -481,6 +481,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->fd = 2;
   t->file_exec = false;
   list_init (&t->opened_files);
+
+  /* P3 Update initialize pages in threds*/
+  t->sup_page_table = NULL;
+  t->user_esp = NULL;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
