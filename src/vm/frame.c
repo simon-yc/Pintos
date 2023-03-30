@@ -73,17 +73,16 @@ frame_allocation (struct page *page)
       f->page = page;
 
       /* Release the frame_enter_lock to allow other threads to allocate 
-         frames. */
+        frames. */
       lock_release (&frame_enter_lock);
 
       return f;
     }
-
-
   lock_release (&frame_enter_lock);
   
   return NULL;
 }
+
 
 /* Lock page p's frame to disallow changes and eviction */
 void

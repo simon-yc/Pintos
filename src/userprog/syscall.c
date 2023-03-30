@@ -20,7 +20,7 @@
 
 static void syscall_handler (struct intr_frame *);
 static int get_user(const uint8_t *uaddr);
-static bool valid_check (const void *usrc_);
+static bool valid_check (const void *usrc_, size_t size);
 static bool copy_in (void *dst_, const void *usrc_, size_t size);
 static struct file *find_opened_file (int fd);
 
@@ -44,19 +44,40 @@ get_user(const uint8_t *uaddr)
   return result;
 }
 
-/* P2 update - helper function to validate user provided pointer value address 
+/* P3 update - helper function to validate user provided pointer value address 
    before using. */
 static bool
-valid_check (const void *usrc_)
+valid_check (const void *usrc_, size_t size)
 {
-  if (usrc_ == NULL || !is_user_vaddr (usrc_))
-    return false;
-  if (pagedir_get_page (thread_current ()->pagedir, usrc_) == NULL)
+  const uint8_t *usrc = usrc_;
+
+  for (; size > 0; size--, usrc++)
     {
-      if (!page_load ((void *) usrc_))
+      if (usrc_ == NULL || !is_user_vaddr (usrc))
+        return false;
+
+      /* Check if current supplimental page contails a page for this address */
+      struct page *page = find_page_only(usrc);
+      if (page == NULL)
+        {
+          /* If not in the page check if its an action of PUSH or PUSHA, if it
+             is those situations, find_page_or_allocate will allocate a page
+             and retuen it. */
+          page = find_page_or_allocate (usrc);
+          if (page == NULL)
+            return false;
+
+          /* Load page into stack */
+          if (!page_load_helper(page))
+            return false;
+        }
+      
+      /* Map the page to kernal address */
+      if (page->frame == NULL && !page_load_helper(page))
         return false;
     }
-	return true;
+
+  return true;
 }
 
 /* P2 update - helper function for reading user address. */
@@ -69,7 +90,7 @@ copy_in (void *dst_, const void *usrc_, size_t size)
   for (; size > 0; size--, dst++, usrc++)
     {
       /* error checking if address is valid */
-      if (!valid_check (usrc))
+      if (!valid_check (usrc, 1))
         return false;
       else
         *dst = get_user (usrc);
@@ -120,10 +141,12 @@ handle_exit (int status)
 pid_t
 handle_exec (const char *cmd_line)
 {
-  tid_t child_pid = -1;
-  child_pid = process_execute (cmd_line);
-	return child_pid;
-}
+  tid_t tid;
+  lock_acquire (&filesys_lock);
+  tid = process_execute (cmd_line);
+  lock_release (&filesys_lock);
+  return tid;
+} 
 
 /* P2 update - system call for create */
 bool
@@ -172,6 +195,7 @@ handle_filesize (int fd)
 {
   lock_acquire (&filesys_lock);
   int size = -1; 
+  
   /* find file with fd = fd in current thread's opened files list. */
   struct file *file = find_opened_file (fd);
   if (file)
@@ -184,6 +208,9 @@ handle_filesize (int fd)
 int
 handle_read (int fd, void *buffer, unsigned size)
 {
+  struct page *p = find_page_only (buffer);
+  if (p->read_only)
+    handle_exit (-1);
   if (fd == STDIN_FILENO)
     {
       uint8_t *temp_buf = (uint8_t *) buffer;
@@ -191,25 +218,48 @@ handle_read (int fd, void *buffer, unsigned size)
         temp_buf[i] = input_getc ();
       return size;
     }
-  struct page *p = find_page (buffer);
-  if (p->read_only)
-    handle_exit (-1);
-  timer_msleep (100);
-  lock_acquire (&filesys_lock);
+  uint8_t *udst = buffer;
+  int bytes_read = 0;
+  struct file *file;
 
-  /* find file with fd = fd in current thread's opened files list. */
-  struct file *file = find_opened_file (fd);
+  file = find_opened_file (fd);
   if (!file)
+    handle_exit (-1);
+
+  while (size > 0)
     {
+      /* check remaning read */
+      size_t remaining = PGSIZE - pg_ofs (udst);
+      size_t temp_size = remaining;
+      if (size < remaining)
+          temp_size = size;
+
+      /* Read from file into page. */
+      if (!valid_check (udst, temp_size))
+        handle_exit (-1);
+      lock_acquire (&filesys_lock);
+      off_t read_num = file_read (file, udst, temp_size);
       lock_release (&filesys_lock);
-      return -1;
+      /* Check if read success. */
+      if (read_num < 0)
+        {
+          if (bytes_read == 0)
+            bytes_read = -1;
+          break;
+        }
+      bytes_read += read_num;
+      if (read_num != (off_t) temp_size)
+          /* Finished reading. */
+          break;
+      
+      udst += read_num;
+      size -= read_num;
     }
-  int bytes_read = file_read (file, buffer, size);
-  lock_release (&filesys_lock);
+
   return bytes_read;
 }
 
-/* P2 update - system call for write */
+/* Write system call. */
 int
 handle_write (int fd, void *buffer, unsigned size)
 {
@@ -218,19 +268,49 @@ handle_write (int fd, void *buffer, unsigned size)
       putbuf ((const char *) buffer, size);
       return size;
     }
-  lock_acquire (&filesys_lock);
+  uint8_t *temp_buffer = buffer;
+  int bytes_written = 0;
+  struct file *file;
 
-  /* find file with fd = fd in current thread's opened files list. */
-  struct file *file = find_opened_file (fd);
+  file = find_opened_file (fd);
   if (!file)
+    handle_exit (-1);
+
+  while (size > 0)
     {
+      size_t remaining = PGSIZE - pg_ofs (temp_buffer);
+      size_t temp_size = remaining;
+      if (size < remaining)
+          temp_size = size;
+
+      if (!valid_check (temp_buffer, temp_size))
+        /* Invalid address. */
+        handle_exit (-1);
+
+      lock_acquire (&filesys_lock);
+      off_t retval = file_write (file, temp_buffer, temp_size);
       lock_release (&filesys_lock);
-      return -1;
+
+      /* Check if write success. */
+      if (retval < 0)
+        {
+          if (bytes_written == 0)
+            bytes_written = -1;
+          break;
+        }
+      bytes_written += retval;
+
+      if (retval != (off_t) temp_size)
+        /* Finished reading. */
+        break;
+      
+      temp_buffer += retval;
+      size -= retval;
     }
-  int bytes_write = file_write (file, buffer, size);
-  lock_release (&filesys_lock);
-  return bytes_write;
+
+  return bytes_written;
 }
+
 
 /* P2 update - system call for seek */
 void
@@ -260,7 +340,6 @@ handle_tell (int fd)
 void
 handle_close (int fd)
 {
-  lock_acquire (&filesys_lock);
   struct thread *cur = thread_current ();
   struct list_elem *e;
   for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
@@ -270,27 +349,14 @@ handle_close (int fd)
       if (fd == f->fd)
         {
           list_remove (&f->file_elem);
+          lock_acquire (&filesys_lock);
           file_close (f->file);
+          lock_release (&filesys_lock);
           cur->fd--;
           free (f);
           break;
         }
     }
-  lock_release (&filesys_lock);
-}
-
-/* P3 update - system call for mmap */
-mapid_t
-handle_mmap (int fd, void *addr)
-{
-  return 0;
-}
-
-/* P3 update - system call for munmap */
-void
-handle_munmap (mapid_t mapping)
-{
-  return;
 }
 
 static void
@@ -320,9 +386,11 @@ syscall_handler (struct intr_frame *f)
       case SYS_EXEC:
         {
           int args[1];
+          /* Check if the address of arguments are valid */
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
             handle_exit (-1);
-          if (!valid_check ((const char *) args[0]))
+          /* Check each byte of actural argument are mapped to physicla space */
+          if (!valid_check ((const char *) args[0], sizeof *args))
             handle_exit (-1);
           f->eax = (uint32_t) handle_exec ((const char *) args[0]);
           break;
@@ -340,7 +408,8 @@ syscall_handler (struct intr_frame *f)
           int args[2];
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2))
             handle_exit (-1);
-          if (!valid_check ((const char *) args[0]))
+          /* Check each byte of actural argument are mapped to physicla space */
+          if (!valid_check ((const char *) args[0], sizeof *args))
             handle_exit (-1);
           f->eax = (uint32_t) handle_create ((const char *) args[0], args[1]);
           break;
@@ -350,7 +419,8 @@ syscall_handler (struct intr_frame *f)
           int args[1];
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
             handle_exit (-1);
-          if (!valid_check ((const char *) args[0]))
+          /* Check the actural arguments are mapped to physicla space */
+          if (!valid_check ((const char *) args[0], sizeof *args))
             handle_exit (-1);
           f->eax = (uint32_t) handle_remove ((const char *) args[0]);
           break;
@@ -360,7 +430,8 @@ syscall_handler (struct intr_frame *f)
           int args[1];
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
             handle_exit (-1);
-          if (!valid_check ((const char *) args[0]))
+          /* Check the actural arguments are mapped to physicla space */
+          if (!valid_check ((const char *) args[0], sizeof *args))
             handle_exit (-1);
           f->eax = handle_open ((const char *) args[0]);
           break;
@@ -378,7 +449,8 @@ syscall_handler (struct intr_frame *f)
           int args[3];
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3))
             handle_exit (-1);
-          if (!valid_check ((const char *) args[1]))
+          /* Check each byte of actural argument are mapped to physicla space */
+          if (!valid_check ((const char *) args[1], args[2]))
             handle_exit (-1);
           f->eax = handle_read (args[0], (void *) args[1], (unsigned) args[2]);
           break;
@@ -388,7 +460,8 @@ syscall_handler (struct intr_frame *f)
           int args[3];
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3))
             handle_exit (-1);
-          if (!valid_check ((const char *) args[1]))
+          /* Check each byte of actural argument are mapped to physicla space */
+          if (!valid_check ((const char *) args[1], args[2]))
             handle_exit (-1);
           f->eax = handle_write (args[0], (void *) args[1], (unsigned) args[2]);
           break;
@@ -415,22 +488,6 @@ syscall_handler (struct intr_frame *f)
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
             handle_exit (-1);
           handle_close (args[0]);
-          break;
-        }
-      case SYS_MMAP:
-        {
-          int args[2];
-          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2))
-            handle_exit (-1);
-          f->eax = handle_mmap (args[0], (void *)args[1]);
-          break;
-        }
-      case SYS_MUNMAP:
-        {
-          int args[1];
-          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
-            handle_exit (-1);
-          handle_munmap (args[0]);
           break;
         }
       default:

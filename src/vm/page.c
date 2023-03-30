@@ -19,6 +19,8 @@ struct page *page_allocation (void *vaddr, bool read_only)
   struct page *p = malloc (sizeof *p);
   if (p == NULL)
     return NULL;
+  
+  /* Initialize the page. */
   p->vaddr = pg_round_down (vaddr);
   p->read_only = read_only;
   p->private = !read_only;
@@ -89,8 +91,9 @@ page_load_helper (struct page *p)
       success = true;
     }
   /* Install frame into page table. */
-  success = pagedir_set_page (thread_current ()->pagedir, p->vaddr,
-                              p->frame->kernel_virtual_address, !p->read_only);
+  success = pagedir_set_page (thread_current ()->pagedir, p->vaddr, 
+                              p->frame->kernel_virtual_address, 
+                              !p->read_only);
   /* Release frame. */
   frame_release_lock (p);
   return success;
@@ -108,7 +111,7 @@ page_load (void *fault_addr)
 
   /* if no page correspond to the address or page allocation not successful, 
      return false */
-  p = find_page (fault_addr);
+  p = find_page_or_allocate (fault_addr);
   if (p == NULL)
     return false;
   
@@ -118,7 +121,7 @@ page_load (void *fault_addr)
 /* Find the page containning virtual address ADDRESS if exist, and allocates 
    stack pages if needed */
 struct page *
-find_page (const void *address)
+find_page_or_allocate (const void *address)
 {
   /* Check if address is virtual address */
   if (address >= PHYS_BASE)
@@ -137,8 +140,9 @@ find_page (const void *address)
     return hash_entry (e, struct page, hash_elem);
 
   /* Check if need allocate stack page. */
-  if ((p.vaddr > PHYS_BASE - STACK_MAX) && ((void *)cur->user_esp - 32 
-                                            <= address))
+  if ((p.vaddr > PHYS_BASE - STACK_MAX) && ((p.vaddr > (void *)cur->user_esp) 
+      || ((void *)cur->user_esp - 32 == address) 
+      || ((void *)cur->user_esp - 4 == address)))
     return page_allocation (p.vaddr, false);
 
   return NULL;
@@ -161,11 +165,42 @@ page_exit_action (struct hash_elem *page_element, void *aux UNUSED)
   free (p);
 }
 
+/* Destroys the current process's page table and frees all the pages. */
 void
 page_exit (void)
 {
   struct hash *h = thread_current ()->sup_page_table;
-  if (h != NULL)
-    hash_destroy (h, page_exit_action);
+  if (h == NULL)
+    return;
+
+  hash_destroy (h, page_exit_action);
 }
 
+/* Find the page containning virtual address ADDRESS if exist. */
+struct page *
+find_page_only (const void *address)
+{  
+  struct page p;
+  struct hash_elem *elem;
+
+  /* Find existing page. */
+  p.vaddr = (void *) pg_round_down (address);
+  elem = hash_find (thread_current ()->sup_page_table, &p.hash_elem);
+
+  if (elem == NULL)
+    return NULL;
+
+  return hash_entry (elem, struct page, hash_elem);
+}
+
+/* Returns true if the page is accessed, false otherwise. */
+bool
+page_check_accessed (struct page *p)
+{
+  bool accessed;
+
+  accessed = pagedir_is_accessed (p->thread->pagedir, p->vaddr);
+  if (accessed)
+    pagedir_set_accessed (p->thread->pagedir, p->vaddr, false);
+  return accessed;
+}

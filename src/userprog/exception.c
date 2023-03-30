@@ -156,7 +156,7 @@ page_fault (struct intr_frame *f)
 
   /* P3 Update */
   /* Lazing loading for other pages in user thread if address is valid */
-  if (is_user_vaddr(fault_addr) && not_present && fault_addr > USER_VADDR_BOTTOM)
+  if (user && not_present)
     {
       if (!page_load (fault_addr))
          /* If load fails, exit the thread */

@@ -41,5 +41,8 @@ struct page
   void zeroing_page (struct page *);
   void load_from_file (struct page *);
   bool page_load_helper (struct page *);
+  struct page *find_page_only(const void *address);
+  struct page *find_page_or_allocate(const void *address);
+  bool page_check_accessed (struct page *);
 
 #endif /* vm/page.h */
