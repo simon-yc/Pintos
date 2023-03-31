@@ -162,7 +162,7 @@ page_evict (struct page *p)
   /* Clear the page from the page table. Later accesses to the page will fault*/
   pagedir_clear_page(p->thread->pagedir, (void *) p->vaddr);
 
-  /* Determine if the frame is dirty. */
+  /* Determine if a write is done to the page. */
   bool dirty = pagedir_is_dirty (p->thread->pagedir, (const void *) p->vaddr);
 
   bool success = !dirty;
@@ -179,7 +179,9 @@ page_evict (struct page *p)
         success = swap_out(p);
       else
         /* If the page is not private, then write it back to file. */
-        success = file_write_at(p->file, (const void *) p->frame->kernel_virtual_address, p->file_bytes, p->file_offset);
+        success = file_write_at(p->file, 
+                                (const void *) p->frame->kernel_virtual_address, 
+                                p->file_bytes, p->file_offset);
     }
 
   if(success)

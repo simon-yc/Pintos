@@ -35,7 +35,7 @@ pagedir_destroy (uint32_t *pd)
   ASSERT (pd != init_page_dir);
   for (pde = pd; pde < pd + pd_no (PHYS_BASE); pde++)
     if (*pde & PTE_P) 
-      /* If the page is in memory, free it. */
+    /* If the page is in memory, free it. */
       palloc_free_page (pde_get_pt (*pde));
   palloc_free_page (pd);
 }

@@ -12,6 +12,16 @@ struct opened_file {
     struct list_elem file_elem;
 };
 
+/* Binds a mapping id to a region of memory and a file. */
+struct file_map
+  {
+    int fd;                     /* file's fd. */
+    struct file *file;          
+    uint8_t *vaddr;             /* User virtual address. */
+    int page_num;               /* total number of pages for this file_map. */
+    struct list_elem elem;      /* file_map's list elem */
+  };
+  
 /* P2 update - syscall handlers and helper functions */
 void syscall_init (void);
 void handle_halt (void);
@@ -28,4 +38,5 @@ unsigned handle_tell (int);
 void handle_close (int);
 mapid_t handle_mmap (int fd, void *addr);
 void handle_munmap (mapid_t mapping);
+void files_exit(void);
 #endif /* userprog/syscall.h */

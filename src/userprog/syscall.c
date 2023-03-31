@@ -359,6 +359,109 @@ handle_close (int fd)
     }
 }
 
+/* P3 update - system call for mmap */
+mapid_t
+handle_mmap (int fd, void *addr)
+{
+  if (fd == 0 || fd == 1 || addr == NULL || addr == 0 || pg_ofs (addr) != 0)
+    return -1;
+  
+  /* find file in current thread's opened files list. */
+  struct file *open_file = find_opened_file (fd);
+  if (open_file == NULL)
+    return -1;
+  struct file_map *map = malloc (sizeof *map);
+  if (map == NULL)
+    return -1;
+
+  /* Get file and file len */
+  map->fd = thread_current ()->fd;
+  lock_acquire (&filesys_lock);
+  map->file = file_reopen (open_file);
+  lock_release (&filesys_lock);
+  if (map->file == NULL)
+    {
+      /* If file reopen failed, free map and return -1 */
+      free (map);
+      return -1;
+    }
+
+  list_push_front (&thread_current ()->file_maps, &map->elem);
+  map->vaddr = addr;
+  map->page_num = 0;
+  off_t offset = 0;
+  lock_acquire (&filesys_lock);
+  off_t file_len = file_length (map->file);
+  lock_release (&filesys_lock);
+  while (file_len > 0)
+    {
+      struct page *p = page_allocation ((uint8_t *) addr + offset, false);
+      if (p == NULL)
+        {
+          /* If page allocation failed, unmap as some pages may be already 
+             allocated, and return -1 */
+          handle_munmap (fd);
+          return -1;
+        }
+      p->private = false;
+      p->file = map->file;
+      p->file_offset = offset;
+      if (file_len >= PGSIZE)
+        p->file_bytes = PGSIZE;
+      else
+        p->file_bytes = file_len;
+      offset += p->file_bytes;
+      file_len -= p->file_bytes;
+      map->page_num++;
+    }
+  return map->fd;
+}
+
+/* P3 update - system call for munmap */
+void
+handle_munmap (mapid_t mapping)
+{
+  struct file_map *map = NULL;
+  struct thread *cur = thread_current ();
+
+  for (struct list_elem *e = list_begin (&cur->file_maps); e != list_end (&cur->file_maps);
+       e = list_next (e))
+    {
+      /* find the file map with mapping id = mapping. */
+      map = list_entry (e, struct file_map, elem);
+      if (map->fd == mapping)
+        break;
+    }
+  if (map == NULL)
+    /* if the file map is not found, exit. */
+    thread_exit ();
+  /* Remove the file map from the file map list. */
+  list_remove(&map->elem);
+  for(int i = 0; i < map->page_num; i++)
+    {
+      if (pagedir_is_dirty(thread_current()->pagedir, ((const void *) ((map->vaddr) + (PGSIZE * i)))))
+        {
+          /* For each page, if the page is dirty, write it back to the file. */
+          lock_acquire (&filesys_lock);
+          file_write_at(map->file, (const void *) (map->vaddr + (PGSIZE * i)), (PGSIZE*(map->page_num)), (PGSIZE * i));
+          lock_release (&filesys_lock);
+        }
+      /* For each page, if the page is in the supplemental page table, remove it. */
+      page_clear((void *) ((map->vaddr) + (PGSIZE * i)));
+    }
+}
+
+/* P3 update - unmap when exit */
+void
+files_exit (void)
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+  for (e = list_begin (&cur->file_maps); e != list_end (&cur->file_maps);
+       e = list_next (e))
+    handle_munmap (list_entry (e, struct file_map, elem)->fd);
+}
+
 static void
 syscall_handler (struct intr_frame *f) 
 {
@@ -488,6 +591,22 @@ syscall_handler (struct intr_frame *f)
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
             handle_exit (-1);
           handle_close (args[0]);
+          break;
+        }
+      case SYS_MMAP:
+        {
+          int args[2];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2))
+            handle_exit (-1);
+          f->eax = handle_mmap (args[0], (void *)args[1]);
+          break;
+        }
+      case SYS_MUNMAP:
+        {
+          int args[1];
+          if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
+            handle_exit (-1);
+          handle_munmap (args[0]);
           break;
         }
       default:

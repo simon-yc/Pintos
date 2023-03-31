@@ -122,6 +122,7 @@ struct thread
     struct hash *sup_page_table;        /* Hash table to keep track of pages 
                                            belong to thread. */
     void *user_esp;                     /* Stack pointer. */
+    struct list file_maps;               /* Memory-mapped files. */
    /* P3 update timer */
     int64_t wakeup_time;                /* Thread wake up time. */
     struct list_elem sleepelem;         /* List element for sleeping

@@ -305,6 +305,8 @@ void
 thread_exit (void) 
 {
   ASSERT (!intr_context ());
+
+  files_exit ();
 #ifdef USERPROG
   process_exit ();
 #endif
@@ -505,6 +507,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->fd = 2;
   t->file_exec = false;
   list_init (&t->opened_files);
+  list_init (&t->file_maps);
 
   /* P3 Update initialize pages in threds*/
   t->sup_page_table = NULL;
