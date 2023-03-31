@@ -5,6 +5,7 @@
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "devices/timer.h"
+#include "vm/swap.h"
 #include "threads/thread.h"
 
 static struct frame *frames;
@@ -78,11 +79,55 @@ frame_allocation (struct page *page)
 
       return f;
     }
+
+  /* No free frame.  Find a frame to evict and try multiple times. */
+  for (size_t i = 0; i < frame_count * 3; i++) 
+    {
+      /* Get a frame. */
+      struct frame *f = &frames[evict_loop];
+      evict_loop ++;
+      if (evict_loop >= frame_count)
+      /* Reset evict_loop to 0 to start from the beginning of the frame table, 
+         as new frame may become avliable. */
+        evict_loop = 0;
+        
+      if (!lock_try_acquire (&f->frame_inuse))
+        /* Frame is in use. Go to next frame */
+        continue;
+
+      if (f->page == NULL) 
+        {
+          /* Frame is free. Will use this frame */
+          f->page = page;
+          lock_release (&frame_enter_lock);
+          return f;
+        } 
+
+      if (page_check_accessed (f->page)) 
+        {
+          /* Frame is recently accessed. Go to next frame */
+          lock_release (&f->frame_inuse);
+          continue;
+        }
+          
+      lock_release (&frame_enter_lock);
+      
+      /* Frame is not recently used. Evict this frame. */
+      if (!page_evict (f->page))
+        {
+          /* Check if eviction failed. */
+          lock_release (&f->frame_inuse);
+          return NULL;
+        }
+      /* Eviction successful. Will use this frame */
+      f->page = page;
+      return f;
+    }
+
   lock_release (&frame_enter_lock);
   
   return NULL;
 }
-
 
 /* Lock page p's frame to disallow changes and eviction */
 void
@@ -110,15 +155,4 @@ frame_release_lock (struct page *p)
   struct frame *f = p->frame;
   if (f != NULL) 
     lock_release (&f->frame_inuse);
-}
-
-/* Releases frame F for use by another page.
-   F must be locked for use by the current process.
-   Any data in F is lost. */
-void
-frame_reset (struct frame *f)
-{
-
-  f->page = NULL;
-  lock_release (&f->frame_inuse);
 }

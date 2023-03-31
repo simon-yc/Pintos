@@ -57,13 +57,13 @@ valid_check (const void *usrc_, size_t size)
         return false;
 
       /* Check if current supplimental page contails a page for this address */
-      struct page *page = find_page_only(usrc);
+      struct page *page = find_page(usrc, false);
       if (page == NULL)
         {
           /* If not in the page check if its an action of PUSH or PUSHA, if it
-             is those situations, find_page_or_allocate will allocate a page
-             and retuen it. */
-          page = find_page_or_allocate (usrc);
+             is those situations, find_page will allocate a page
+             and retuen it as grow is set to true. */
+          page = find_page (usrc, true);
           if (page == NULL)
             return false;
 
@@ -208,7 +208,7 @@ handle_filesize (int fd)
 int
 handle_read (int fd, void *buffer, unsigned size)
 {
-  struct page *p = find_page_only (buffer);
+  struct page *p = find_page (buffer, false);
   if (p->read_only)
     handle_exit (-1);
   if (fd == STDIN_FILENO)

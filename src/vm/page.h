@@ -36,13 +36,11 @@ struct page
   hash_hash_func page_get_hash;  /* hash table helper */
   hash_less_func page_less;      /* hash table helper */
   void page_exit (void);         /* free all pages in the page hash table */
-  struct page *find_page (const void *);
-  bool do_page_load (struct page *);
+  bool page_check_accessed (struct page *);
+  bool page_evict (struct page *);
   void zeroing_page (struct page *);
   void load_from_file (struct page *);
   bool page_load_helper (struct page *);
-  struct page *find_page_only(const void *address);
-  struct page *find_page_or_allocate(const void *address);
-  bool page_check_accessed (struct page *);
-
+  void page_clear (void *);
+  struct page *find_page (const void *, bool);
 #endif /* vm/page.h */
