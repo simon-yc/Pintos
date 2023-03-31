@@ -214,8 +214,12 @@ handle_read (int fd, void *buffer, unsigned size)
   if (fd == STDIN_FILENO)
     {
       uint8_t *temp_buf = (uint8_t *) buffer;
+      if (!valid_check (temp_buf, size))
+          handle_exit (-1);
       for (unsigned i = 0; i < size; i ++)
-        temp_buf[i] = input_getc ();
+        {
+          temp_buf[i] = input_getc ();
+        }
       return size;
     }
   uint8_t *udst = buffer;
@@ -265,6 +269,9 @@ handle_write (int fd, void *buffer, unsigned size)
 {
   if (fd == STDOUT_FILENO)
     {
+      if (!valid_check (buffer, size))
+        /* Invalid address. */
+        handle_exit (-1);
       putbuf ((const char *) buffer, size);
       return size;
     }

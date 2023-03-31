@@ -159,11 +159,11 @@ page_check_accessed (struct page *p)
 bool
 page_evict (struct page *p)
 {
-  /* Clear the page from the page table. Later accesses to the page will fault*/
-  pagedir_clear_page(p->thread->pagedir, (void *) p->vaddr);
-
   /* Determine if a write is done to the page. */
   bool dirty = pagedir_is_dirty (p->thread->pagedir, (const void *) p->vaddr);
+  
+  /* Clear the page from the page table. Later accesses to the page will fault*/
+  pagedir_clear_page(p->thread->pagedir, (void *) p->vaddr);
 
   bool success = !dirty;
   
