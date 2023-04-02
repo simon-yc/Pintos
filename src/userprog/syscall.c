@@ -56,8 +56,9 @@ valid_check (const void *usrc_, size_t size)
       if (usrc_ == NULL || !is_user_vaddr (usrc))
         return false;
 
-      /* Check if current supplimental page contails a page for this address */
-      struct page *page = find_page(usrc, false);
+      /* Check if current supplimental page contails a page for this 
+         address */
+      struct page *page = find_page (usrc, false);
       if (page == NULL)
         {
           /* If not in the page check if its an action of PUSH or PUSHA, if it
@@ -68,12 +69,12 @@ valid_check (const void *usrc_, size_t size)
             return false;
 
           /* Load page into stack */
-          if (!page_load_helper(page))
+          if (!page_load_helper (page))
             return false;
         }
       
       /* Map the page to kernal address */
-      if (page->frame == NULL && !page_load_helper(page))
+      if (page->frame == NULL && !page_load_helper (page))
         return false;
     }
 
@@ -105,7 +106,8 @@ find_opened_file (int fd)
 {
   struct thread *cur = thread_current ();
   struct list_elem *e;
-  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+  for (e = list_begin (&cur->opened_files); 
+       e != list_end (&cur->opened_files);
        e = list_next (e))
     {
       struct opened_file *f = list_entry (e, struct opened_file, file_elem);
@@ -349,7 +351,8 @@ handle_close (int fd)
 {
   struct thread *cur = thread_current ();
   struct list_elem *e;
-  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+  for (e = list_begin (&cur->opened_files); 
+       e != list_end (&cur->opened_files);
        e = list_next (e))
     {
       struct opened_file *f = list_entry (e, struct opened_file, file_elem);
@@ -431,7 +434,8 @@ handle_munmap (mapid_t mapping)
   struct file_map *map = NULL;
   struct thread *cur = thread_current ();
 
-  for (struct list_elem *e = list_begin (&cur->file_maps); e != list_end (&cur->file_maps);
+  for (struct list_elem *e = list_begin (&cur->file_maps); 
+       e != list_end (&cur->file_maps);
        e = list_next (e))
     {
       /* find the file map with mapping id = mapping. */
@@ -443,18 +447,23 @@ handle_munmap (mapid_t mapping)
     /* if the file map is not found, exit. */
     thread_exit ();
   /* Remove the file map from the file map list. */
-  list_remove(&map->elem);
+  list_remove (&map->elem);
   for(int i = 0; i < map->page_num; i++)
     {
-      if (pagedir_is_dirty(thread_current()->pagedir, ((const void *) ((map->vaddr) + (PGSIZE * i)))))
+      if (pagedir_is_dirty (thread_current ()->pagedir, 
+                            ((const void *) ((map->vaddr) + (PGSIZE * i)))))
         {
-          /* For each page, if the page is dirty, write it back to the file. */
+          /* For each page, if the page is dirty, write it back to the 
+             file. */
           lock_acquire (&filesys_lock);
-          file_write_at(map->file, (const void *) (map->vaddr + (PGSIZE * i)), (PGSIZE*(map->page_num)), (PGSIZE * i));
+          file_write_at (map->file, 
+                         (const void *) (map->vaddr + (PGSIZE * i)), 
+                         (PGSIZE * (map->page_num)), (PGSIZE * i));
           lock_release (&filesys_lock);
         }
-      /* For each page, if the page is in the supplemental page table, remove it. */
-      page_clear((void *) ((map->vaddr) + (PGSIZE * i)));
+      /* For each page, if the page is in the supplemental page table, 
+         remove it. */
+      page_clear ((void *) ((map->vaddr) + (PGSIZE * i)));
     }
 }
 
@@ -475,7 +484,8 @@ syscall_handler (struct intr_frame *f)
   unsigned syscall_number;
 
   /* extract the syscall number */
-  if (!copy_in (&syscall_number, (const void *) f->esp, sizeof syscall_number))
+  if (!copy_in (&syscall_number, (const void *) f->esp, 
+      sizeof syscall_number))
     handle_exit (-1);
 
   switch (syscall_number) 
@@ -499,7 +509,8 @@ syscall_handler (struct intr_frame *f)
           /* Check if the address of arguments are valid */
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 1))
             handle_exit (-1);
-          /* Check each byte of actural argument are mapped to physicla space */
+          /* Check each byte of actural argument are mapped to physicla 
+             space */
           if (!valid_check ((const char *) args[0], sizeof *args))
             handle_exit (-1);
           f->eax = (uint32_t) handle_exec ((const char *) args[0]);
@@ -518,7 +529,8 @@ syscall_handler (struct intr_frame *f)
           int args[2];
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2))
             handle_exit (-1);
-          /* Check each byte of actural argument are mapped to physicla space */
+          /* Check each byte of actural argument are mapped to physicla 
+             space */
           if (!valid_check ((const char *) args[0], sizeof *args))
             handle_exit (-1);
           f->eax = (uint32_t) handle_create ((const char *) args[0], args[1]);
@@ -559,10 +571,12 @@ syscall_handler (struct intr_frame *f)
           int args[3];
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3))
             handle_exit (-1);
-          /* Check each byte of actural argument are mapped to physicla space */
+          /* Check each byte of actural argument are mapped to physical 
+             space */
           if (!valid_check ((const char *) args[1], args[2]))
             handle_exit (-1);
-          f->eax = handle_read (args[0], (void *) args[1], (unsigned) args[2]);
+          f->eax = handle_read (args[0], (void *) args[1], 
+                                (unsigned) args[2]);
           break;
         }
       case SYS_WRITE:
@@ -570,10 +584,12 @@ syscall_handler (struct intr_frame *f)
           int args[3];
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3))
             handle_exit (-1);
-          /* Check each byte of actural argument are mapped to physicla space */
+          /* Check each byte of actural argument are mapped to physicla  
+             space */
           if (!valid_check ((const char *) args[1], args[2]))
             handle_exit (-1);
-          f->eax = handle_write (args[0], (void *) args[1], (unsigned) args[2]);
+          f->eax = handle_write (args[0], (void *) args[1], 
+                                 (unsigned) args[2]);
           break;
         }
       case SYS_SEEK:
@@ -605,7 +621,7 @@ syscall_handler (struct intr_frame *f)
           int args[2];
           if (!copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2))
             handle_exit (-1);
-          f->eax = handle_mmap (args[0], (void *)args[1]);
+          f->eax = handle_mmap (args[0], (void *) args[1]);
           break;
         }
       case SYS_MUNMAP:

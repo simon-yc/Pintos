@@ -42,16 +42,14 @@ swap_in (struct page *p)
   if (!swap_block || !swap_table)
     return;
   size_t i;
-  lock_acquire(&swap_lock);
+  lock_acquire (&swap_lock);
   for (i = 0; i < SECTORS_PER_PAGE; i++)
-    {
       /* Read in page sectors. */
       block_read (swap_block, p->sector + i,
                   p->frame->kernel_virtual_address + i * BLOCK_SECTOR_SIZE);
-    }
   /* Free a swap slot when its contents are read back into a frame. */
   bitmap_reset (swap_table, p->sector / SECTORS_PER_PAGE);
-  lock_release(&swap_lock);
+  lock_release (&swap_lock);
   p->sector = (block_sector_t) -1;
 }
 
@@ -75,11 +73,10 @@ swap_out (struct page *p)
   p->sector = open_slot * SECTORS_PER_PAGE;
 
   for (i = 0; i < SECTORS_PER_PAGE; i++)
-  {
     /* Write page sectors to swap block. */
     block_write (swap_block, p->sector + i,
-                 (uint8_t *) p->frame->kernel_virtual_address + i * BLOCK_SECTOR_SIZE);
-  }
+                 (uint8_t *) p->frame->kernel_virtual_address 
+                 + i * BLOCK_SECTOR_SIZE);
   /* Reset page. */
   p->file_offset = 0;
   p->file_bytes = 0;

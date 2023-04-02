@@ -4,10 +4,9 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "threads/vaddr.h"  // for PHYS_BASE
-#include "userprog/syscall.h"  // for handle_exit function
+#include "threads/vaddr.h"  
+#include "userprog/syscall.h"
 #include "vm/page.h"
-#define USER_VADDR_BOTTOM ((void *) 0x08048000)
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;

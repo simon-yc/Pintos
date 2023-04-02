@@ -331,8 +331,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (!t->file_exec)
     {
       t->file_exec = true;
-      struct opened_file *thread_file_temp = malloc (sizeof (struct 
-                                                             opened_file));
+      struct opened_file *thread_file_temp = malloc (sizeof 
+                                                     (struct opened_file));                                                   
       thread_file_temp->file = file;
       thread_file_temp->fd = t->fd;
       list_push_back (&thread_current ()->opened_files, 
@@ -505,8 +505,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* P3 Update - Add user vitual address to page hash table, wait to be map
-         to physical address*/
+      /* P3 Update - Add user vitual address to page hash table, wait to be 
+         map to physical address*/
       struct page *p = page_allocation (upage, !writable);
       if (p == NULL)
         return false;
@@ -603,7 +603,8 @@ setup_stack (void **esp, const char *file_name, char **save_ptr)
 
   /* P3 Update */
   /* Map user address into page table */
-  struct page *page = page_allocation (((uint8_t *) PHYS_BASE) - PGSIZE, false);
+  struct page *page = page_allocation (((uint8_t *) PHYS_BASE) - PGSIZE, 
+                                       false);
   if (page != NULL) 
     {
       /* P3 update - Map page to frame */

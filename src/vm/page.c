@@ -32,7 +32,8 @@ struct page *page_allocation (void *vaddr, bool read_only)
   /* Add this page to current thread's page table. */
   if (hash_insert (cur->sup_page_table, &p->hash_elem) == NULL)
     return p;
-  /* If the page is already in the page table, free the page and return null. */
+  /* If the page is already in the page table, free the page and return 
+     null. */
   free (p);
   return NULL;
 }
@@ -66,8 +67,8 @@ void
 load_from_file (struct page *p)
 {
   off_t read_bytes = file_read_at (p->file, 
-                                    p->frame->kernel_virtual_address,
-                                    p->file_bytes, p->file_offset);
+                                   p->frame->kernel_virtual_address,
+                                   p->file_bytes, p->file_offset);
   off_t zero_bytes = PGSIZE - read_bytes;
   memset (p->frame->kernel_virtual_address + read_bytes, 0, zero_bytes);
 }
@@ -97,7 +98,8 @@ page_load_helper (struct page *p)
     }
   /* Install frame into page table. */
   success = pagedir_set_page (thread_current ()->pagedir, p->vaddr,
-                              p->frame->kernel_virtual_address, !p->read_only);
+                              p->frame->kernel_virtual_address, 
+                              !p->read_only);
   /* Release frame. */
   frame_release_lock (p);
   return success;
@@ -162,30 +164,33 @@ page_evict (struct page *p)
     /* Determine if a write is done to the page. */
   bool dirty = pagedir_is_dirty (p->thread->pagedir, (const void *) p->vaddr);
 
-  /* Clear the page from the page table. Later accesses to the page will fault*/
+  /* Clear the page from the page table. Later accesses to the page will 
+     fault*/
   pagedir_clear_page (p->thread->pagedir, (void *) p->vaddr);
 
   bool success = !dirty;
   
   if (p->file == NULL)
-    /* If the page has no file associated with it, then it must be swapped out. */
-    success = swap_out(p);
+    /* If the page has no file associated with it, then it must be swapped 
+       out. */
+    success = swap_out (p);
   else if (dirty) 
     {
       /* If the page is dirty and has a file associated with it, then we 
           need to write it back to disk or file. */
-      if(p->private)
+      if (p->private)
         /* If the page is private, then we need to write it back to disk. */
         success = swap_out (p);
       else
         /* If the page is not private, page is file is a memory-mapped file 
            then write it back to file. */
-        success = file_write_at(p->file, 
-                                (const void *) p->frame->kernel_virtual_address, 
-                                p->file_bytes, p->file_offset);
+        success = 
+          file_write_at(p->file, 
+                        (const void *) p->frame->kernel_virtual_address, 
+                        p->file_bytes, p->file_offset);
     }
 
-  if(success)
+  if (success)
     /* free the frame */
     p->frame = NULL;
   return success;
@@ -232,9 +237,9 @@ find_page (const void *address, bool grow)
 
   /* Check if need allocate stack page. */
   if (grow && (p.vaddr > PHYS_BASE - STACK_MAX) 
-      && ((p.vaddr > (void *)cur->user_esp) 
-      || ((void *)cur->user_esp - 32 == address) 
-      || ((void *)cur->user_esp - 4 == address)))
+      && ((p.vaddr > (void *) cur->user_esp) 
+      || ((void *) cur->user_esp - 32 == address) 
+      || ((void *) cur->user_esp - 4 == address)))
     return page_allocation (p.vaddr, false);
 
   return NULL;

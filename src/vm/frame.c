@@ -48,7 +48,8 @@ frame_table_init (void)
 struct frame *
 frame_allocation (struct page *page) 
 {
-  /* Acquire the frame_enter_lock to ensure exclusive access to the frame table. */
+  /* Acquire the frame_enter_lock to ensure exclusive access to the frame 
+     table. */
   lock_acquire (&frame_enter_lock);
 
   /* Find a free frame. */
@@ -139,13 +140,13 @@ frame_acquire_lock (struct page *p)
     return;
 
   /* If a frame exists, acquire the lock for that frame. */
-  lock_acquire(&f->frame_inuse);
+  lock_acquire (&f->frame_inuse);
 
   /* Verify that the page's frame has not changed since it was last accessed.
      If the frame was removed asynchronously, release the lock and assert that
      the frame is no longer associated with the page. */
   if (f != p->frame)
-    lock_release(&f->frame_inuse);
+    lock_release (&f->frame_inuse);
 }
 
 /* Release page p's frame lock to allow eviction. */

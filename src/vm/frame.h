@@ -14,8 +14,8 @@ struct frame
 void frame_table_init (void);           /* Initialaize frame table. */
 struct frame *frame_allocation (struct page *page); 
                                         /* Map page to one frame. */
-void frame_acquire_lock(struct page *p);        /* Lock frame. */
-void frame_release_lock(struct page *p);      /* Unlock frame. */
+void frame_acquire_lock (struct page *p);        /* Lock frame. */
+void frame_release_lock (struct page *p);      /* Unlock frame. */
 void frame_reset (struct frame *);       /* Free frame. */
 
 #endif /* vm/frame.h */

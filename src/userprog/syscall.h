@@ -36,7 +36,7 @@ int handle_write (int, void *, unsigned);
 void handle_seek (int, unsigned);
 unsigned handle_tell (int);
 void handle_close (int);
-mapid_t handle_mmap (int fd, void *addr);
-void handle_munmap (mapid_t mapping);
+mapid_t handle_mmap (int, void *);
+void handle_munmap (mapid_t);
 void files_exit(void);
 #endif /* userprog/syscall.h */
