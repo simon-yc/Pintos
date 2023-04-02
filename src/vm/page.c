@@ -37,7 +37,7 @@ struct page *page_allocation (void *vaddr, bool read_only)
   return NULL;
 }
 
-/* Returm the hash value */
+/* Return the hash value */
 unsigned
 page_get_hash (const struct hash_elem *e, void *aux UNUSED)
 {
@@ -159,11 +159,11 @@ page_check_accessed (struct page *p)
 bool
 page_evict (struct page *p)
 {
-  /* Determine if a write is done to the page. */
+    /* Determine if a write is done to the page. */
   bool dirty = pagedir_is_dirty (p->thread->pagedir, (const void *) p->vaddr);
-  
+
   /* Clear the page from the page table. Later accesses to the page will fault*/
-  pagedir_clear_page(p->thread->pagedir, (void *) p->vaddr);
+  pagedir_clear_page (p->thread->pagedir, (void *) p->vaddr);
 
   bool success = !dirty;
   
@@ -176,9 +176,10 @@ page_evict (struct page *p)
           need to write it back to disk or file. */
       if(p->private)
         /* If the page is private, then we need to write it back to disk. */
-        success = swap_out(p);
+        success = swap_out (p);
       else
-        /* If the page is not private, then write it back to file. */
+        /* If the page is not private, page is file is a memory-mapped file 
+           then write it back to file. */
         success = file_write_at(p->file, 
                                 (const void *) p->frame->kernel_virtual_address, 
                                 p->file_bytes, p->file_offset);
@@ -230,7 +231,8 @@ find_page (const void *address, bool grow)
     return hash_entry (elem, struct page, hash_elem);
 
   /* Check if need allocate stack page. */
-  if (grow && (p.vaddr > PHYS_BASE - STACK_MAX) && ((p.vaddr > (void *)cur->user_esp) 
+  if (grow && (p.vaddr > PHYS_BASE - STACK_MAX) 
+      && ((p.vaddr > (void *)cur->user_esp) 
       || ((void *)cur->user_esp - 32 == address) 
       || ((void *)cur->user_esp - 4 == address)))
     return page_allocation (p.vaddr, false);
