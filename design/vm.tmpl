@@ -116,16 +116,13 @@ Added to struct thread
 /* Constant value for max stack size */
 #define STACK_MAX (1024 * 1024)
 
-/* Constant value for user virtual address bottom */
-#define USER_VADDR_BOTTOM ((void *) 0x08048000)
-
 /* Constant value for sectors per page. */
 #define SECTORS_PER_PAGE (PGSIZE / BLOCK_SECTOR_SIZE)
 
 ---- ALGORITHMS ----
 
 >> A2: In a few paragraphs, describe your code for accessing the data
->> stored in the SPT about a given page. (TA)
+>> stored in the SPT about a given page.
 
 Our code stores SPT in a hash table for each thread (called sup_page_table in 
 thread struct). For accessing the data about a given page stored in the SPT, 
@@ -157,12 +154,13 @@ can be accessed too.
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
 
-Our code avoids this issue by always using kernel virtual address to access 
-user virtual address data. We use lazy loading to load stack pages, therefore 
-at first in user process there is no actual physical address space allocated 
-for any stack. When user process wants to execute anything, user process will 
-call syscall then kernel will take care of all the data accessing. Therefore 
-we avoid the issue by having kernel process take care of all user data access.
+There is a potential problem when a kernnel virtual address and a user 
+virtual address both alias a single frame. To avoid having to coordinate 
+accessed and dirty bits between kernel and user virtual addresses, we 
+always use user virtual addresses to access data. This eliminates the need 
+for coordination of accessed and dirty bits between them. We chose this 
+approach because it simplifies physical memory management, avoiding the 
+issue entirely.
 
 ---- SYNCHRONIZATION ----
 
@@ -185,14 +183,32 @@ no race conditions.
 >> A5: Why did you choose the data structure(s) that you did for
 >> representing virtual-to-physical mappings?
 
-(Ask TA)
-We used a hash table to represent virtual-to-physical mappings. We chose a
-hash table because it is a good way to store key-value pairs. In our case,
-the key is the virtual address and the value is the page. We also used a
-lock to protect the hash table. This way, only one process can access the
-hash table at a time. An advantage of using a hash table is that it is 
-already implemented in Pintos. We did not have to implement it ourselves.
-Furthermore, it is easy to use and it is efficient enough for our purposes.
+To represent virtual-to-physical mappings, we had one field in struct page 
+called frame that keep track of this page's physical address, we also
+have one field called vaddr in page to keep track of this page's user 
+virtual address. In stuct frame we have kernel_virtual_address to keep
+track of kernel virtual address for that frame. We also have a page field 
+to keep track which page this frame belongs to. Therefore, we basically
+have a one to one maping from virtual-to-physical, using page and frame.
+We choose this because it is easy to manage, if you have either page or frame,
+you get to find out the other one. (eg. with vitural/physical address, we can
+find physical/virtual address). 
+
+We used a hash table for sup_page_table because it is a good way to store 
+key-value pairs. In our case, the key is the virtual address and the value 
+is the page. another advantage of using a hash table is that 
+it is already implemented in Pintos. We did not have to implement it 
+ourselves. Furthermore, it is easy to use and it is efficient enough for our 
+purposes. The SPT is used to store additional information about each page. 
+
+The SPT interacts with the frame structure by using it to allocate physical 
+memory for pages that are not yet in memory. When a page fault occurs and 
+the page is not already in memory, the SPT uses the frame structure to 
+allocate a free page frame and maps the virtual address to the new physical 
+frame. In addition, the SPT also interacts with other parts of the code, 
+such as during page replacement. When a page is evicted, the SPT updates 
+the corresponding entry in the hash table to reflect that the page is no 
+longer in memory.
 
                PAGING TO AND FROM DISK
                =======================
@@ -290,9 +306,6 @@ Added to struct thread
 /* Constant value for max stack size */
 #define STACK_MAX (1024 * 1024)
 
-/* Constant value for user virtual address bottom */
-#define USER_VADDR_BOTTOM ((void *) 0x08048000)
-
 /* Constant value for sectors per page. */
 #define SECTORS_PER_PAGE (PGSIZE / BLOCK_SECTOR_SIZE)
 
@@ -326,10 +339,9 @@ conditions to decide whether swap the page to disk.
 1. If this page has no file attached to it and it was written before, we must 
 call swap_out to swap this page to disk.
 2. If page was written before and has a file, we check if the page's file is 
-shared with another process by the page->private section. If the file is 
-shared we need to move file's data to frame to ensure another page can
-still access the file. If this file only belongs to process Q, we just call 
-swap_out() to write the page to disk.
+shared with another process by the page->private section. If file is not 
+private, we need to write what we've already modified back to original file.
+Otherwise, we will write it back to file. 
 
 >> B4: Explain your heuristic for deciding whether a page fault for an
 >> invalid virtual address should cause the stack to be extended into
@@ -379,6 +391,12 @@ swap_lock before releasing the frame_inuse lock.
 >> the page during the eviction process?  How do you avoid a race
 >> between P evicting Q's frame and Q faulting the page back in?
 
+To ensure that Q cannot access or modify the page during the eviction process
+of process P, right in the beginning of the page eviction, we clear this page 
+from the page table of process Q, so any later accesses to the page from Q 
+will fault. This ensures that any future attempts by Q to access or modify 
+the page will fail.
+
 >> B7: Suppose a page fault in process P causes a page to be read from
 >> the file system or swap.  How do you ensure that a second process Q
 >> cannot interfere by e.g. attempting to evict the frame while it is
@@ -392,7 +410,7 @@ Once found this fault address page, we call page_load_helper to map the
 page to a frame. In page_load_helper call frame_acquire_lock to try to lock 
 this page's frame. If the frame is NULL, frame_acquire_lock will do nothing 
 and we will call frame_allocation to find a free frame for this page. 
-Frame_allocation will return a frame with frame->frame_inuse already
+Frame_allocation will return a frame with frame->frame_inuse already 
 being locked. Therefore no other page can access process P's page, 
 no matter whether this frame is newly allocated or already mapped before.
 
@@ -411,6 +429,17 @@ For syscall read and write, we check whether buffer has a valid physical
 address, right before we perform the write or read to buffer. In this way we 
 prevent that even buffer is really big, its frame would be recently accessed, 
 therefore we would not swap them out. 
+
+We handle attempted accesses to invalid virtual addresses by using
+valid_check function. In valid_check we first check if the address is null and
+if the address is a valid user address, thread exit if either one of them is 
+not satisfied. Second, we will loop through all bytes for each arguments to
+make sure that all address in arguments are valid. In second step, we first
+try to find out if current page is in the sup_page_table, if the page is in
+sup_page_table we check if it has a frame, if not we use page_load_helper()
+to bring the page back. If the page is not in sup_page_table, we use 
+find_page(, true) to check whether we need to allocate a new page for current
+data addresss. 
 
 ---- RATIONALE ----
 
@@ -452,8 +481,8 @@ and parallelism.
       struct frame *frame;       /* Frame that the page is mapped to */
       bool read_only;            /* If page is ready only */
       struct hash_elem hash_elem;/* hash table element */
-      bool private;              /* Boolean to determine if information will be 
-                                    write back to file or swap slot.  */
+      bool private;              /* Boolean to determine if information will 
+                                    be write back to file or swap slot.  */
       struct file *file;         /* Page's corresponding file */
       off_t file_offset;         /* File's offset */
       off_t file_bytes;          /* Info about file, read/write */
@@ -529,9 +558,6 @@ Added to struct thread
 /* Constant value for max stack size */
 #define STACK_MAX (1024 * 1024)
 
-/* Constant value for user virtual address bottom */
-#define USER_VADDR_BOTTOM ((void *) 0x08048000)
-
 /* Constant value for sectors per page. */
 #define SECTORS_PER_PAGE (PGSIZE / BLOCK_SECTOR_SIZE)
 
@@ -545,9 +571,9 @@ We created a new struct called file_map for memory mapped files, where each
 file_map stores fd that represent the corresponding opened file fd of the 
 current thread that it is mapping to, the corresponding file, a field to store 
 the user virtual address, and a total number of pages for this file_map. To 
-keep track of all memory-mapped files for each thread, we let the thread struct 
-contain a list called file_maps.  When mmap is called, we allocate a new object 
-of file_map with the field file containing the given fd's corresponding file 
+keep track of all memory-mapped files for each thread, we let the thread 
+struct contain a list called file_maps. When mmap is called, we allocate a new 
+object of file_map with the field file containing the given fd's corresponding file 
 and will keep track of the given virtual address. Every newly created file_map 
 object will be added to the thread's file_maps. When unmap is called, we will 
 remove the file_map item, write pages back to the file if dirty, and clear 
@@ -562,6 +588,13 @@ just get swapped out. Otherwise, only if the page is dirty, pages will either
 be swapped out to the swap slot or written back to the corresponding file. In 
 our case, if it is for a mapped file, it will written back to the file, if the 
 page is dirty. 
+
+Generally, like mentioned in section B above, the page fault and eviction 
+processes differ between swap pages and other pages such that if this page has 
+no file attached to it and it was written before, we will swap this page to 
+disk. On the other hand, if the page is dirty and has a file, we check the 
+page file's private state, if private is true then we will swap the page, 
+otherwise we will write it back to file. 
 
 >> C3: Explain how you determine whether a new file mapping overlaps
 >> any existing segment.
@@ -585,7 +618,7 @@ allocation failed, our design will unmap as some pages may be already allocated
 >> the two situations.
 
 Our implementation does share majority of the code (e.g, lazy loading) for the 
-two situation, and are differencing during evictions, where "mmap" mappings are 
+two situation, and are differencing during evictions, where "mmap" mappings are
 only written back to their original files, and only when the page is dirty. 
 Sharing code for the two situation can make code cleaner and easier to 
 understand and read, as the two situations share many similarities. Also, it 
