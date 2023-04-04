@@ -4,8 +4,9 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "threads/vaddr.h"  // for PHYS_BASE
- #include "userprog/syscall.h"  // for handle_exit function
+#include "threads/vaddr.h"  
+#include "userprog/syscall.h"
+#include "vm/page.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -140,10 +141,6 @@ page_fault (struct intr_frame *f)
      (#PF)". */
   asm ("movl %%cr2, %0" : "=r" (fault_addr));
 
-  /* P2 update - check if the faulting address is below PHYS_BASE. */
-  if (fault_addr < PHYS_BASE)
-      handle_exit (-1);
-
   /* Turn interrupts back on (they were only off so that we could
      be assured of reading CR2 before it changed). */
   intr_enable ();
@@ -156,13 +153,15 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-   /* P2 update - reset address when page fault */
-   if (!user)
-     {
-       f->eip = (void (*)(void)) f->eax;
-       f->eax = 0xffffffff;
-       handle_exit (-1);
-     }
+  /* P3 Update */
+  /* Lazing loading for other pages in user thread if address is valid */
+  if (user && not_present)
+    {
+      if (!page_load (fault_addr))
+         /* If load fails, exit the thread */
+        thread_exit ();
+      return;
+    }
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

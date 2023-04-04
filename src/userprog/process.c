@@ -19,6 +19,8 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "userprog/syscall.h"
+#include "vm/page.h"
+#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -35,7 +37,7 @@ process_execute (const char *file_name)
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
+  fn_copy = malloc (strlen (file_name) + 1);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
@@ -51,7 +53,7 @@ process_execute (const char *file_name)
   tid = thread_create (temp_name, PRI_DEFAULT, start_process, fn_copy);
   free (temp_name);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy);
+    free (fn_copy);
 
   /* P2 update - push the new thread to current thread's children list */
   struct thread *child = get_thread (tid);
@@ -83,7 +85,7 @@ start_process (void *file_name_)
   success = load (file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  free (file_name);
   struct thread *cur = thread_current ();
 
   /* P2 update - if loading not successful, set load status to -1 and exit. */
@@ -93,7 +95,7 @@ start_process (void *file_name_)
       cur->load_status = -1;
       thread_exit ();
     }
-  
+
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -179,6 +181,8 @@ process_exit (void)
     }
 
   sema_down (&(cur->exit_lock));
+  /* P3 update - free all pages of the current thread. */
+  page_exit ();
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -305,6 +309,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  /* P3 update - Allocate and activate initial page hash table for thread. */
+  t->sup_page_table = malloc (sizeof *t->sup_page_table);
+  if (t->sup_page_table == NULL)
+    goto done;
+  hash_init (t->sup_page_table, page_get_hash, page_less, NULL);
+
   /* P2 update - extract file name */
   char *save_ptr;
   file_name = strtok_r ((char *)file_name, " ", &save_ptr);
@@ -321,8 +331,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (!t->file_exec)
     {
       t->file_exec = true;
-      struct opened_file *thread_file_temp = malloc (sizeof (struct 
-                                                             opened_file));
+      struct opened_file *thread_file_temp = malloc (sizeof 
+                                                     (struct opened_file));                                                   
       thread_file_temp->file = file;
       thread_file_temp->fd = t->fd;
       list_push_back (&thread_current ()->opened_files, 
@@ -487,7 +497,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -496,29 +505,22 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
+      /* P3 Update - Add user vitual address to page hash table, wait to be 
+         map to physical address*/
+      struct page *p = page_allocation (upage, !writable);
+      if (p == NULL)
         return false;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+      if (page_read_bytes > 0) 
         {
-          palloc_free_page (kpage);
-          return false; 
+          p->file = file;
+          p->file_offset = ofs;
+          p->file_bytes = page_read_bytes;
         }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-
-      /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
+
+      /* P3 Update - offset correction */
+      ofs += page_read_bytes;
       upage += PGSIZE;
     }
   return true;
@@ -558,12 +560,10 @@ store_arguments (void **esp, const char *file_name, char **save_ptr)
         }
     }  
   free (token);
-
   /* set zero for allignment and fake return address */
   int *zero = malloc (sizeof (int *));
   zero = 0;
   int word_allign = (size_t) *esp % 4;
-
   /* if not aligned: */
   if (word_allign) 
     { 
@@ -579,7 +579,6 @@ store_arguments (void **esp, const char *file_name, char **save_ptr)
       /* copy argv address to stack */
       memcpy (*esp, &argv[i], sizeof (char *)); 
     }
-  
   char *argv_cur = *esp;
   *esp -= sizeof (char **);
   /* push argv */  
@@ -590,7 +589,6 @@ store_arguments (void **esp, const char *file_name, char **save_ptr)
   *esp -= sizeof (void *);
   /* push fake return address */
   memcpy (*esp, &zero, sizeof (void *));  
-  // check
   free (argv);
   free (zero);
   return true;
@@ -601,26 +599,40 @@ store_arguments (void **esp, const char *file_name, char **save_ptr)
 static bool
 setup_stack (void **esp, const char *file_name, char **save_ptr) 
 {
-  uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
+  /* P3 Update */
+  /* Map user address into page table */
+  struct page *page = page_allocation (((uint8_t *) PHYS_BASE) - PGSIZE, 
+                                       false);
+  if (page != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
+      /* P3 update - Map page to frame */
+      page->frame = frame_allocation (page);
+      if (page->frame != NULL)
+        {
+          /* P3 update - map user page to kernel page */
+          success = install_page (page->vaddr, 
+                                  page->frame->kernel_virtual_address, true);
+          
+          /* P2 update - Update page information */
+          if (success)
+            {
+              *esp = PHYS_BASE;
+              page->read_only = false;
+              page->private = false;
+              /* P2 update - load argument*/
+              success = store_arguments (esp, file_name, save_ptr);
+              frame_release_lock (page);
+            }
+        }
       else
         {
           /* P2 update - if not successful, free pafe and return. */
-          palloc_free_page (kpage);
+          palloc_free_page (page);
           return success;
         }
     }
-
-  /* P2 update - store arguments */
-  if (!store_arguments (esp, file_name, save_ptr))
-    success = false;
   return success;
 }
 
@@ -637,7 +649,6 @@ static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
-
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
