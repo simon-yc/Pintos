@@ -37,9 +37,9 @@ struct inode_disk
   {
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t direct;                    /* direct block. */
-    uint32_t indirect;                  /* indirect block. */
-    uint32_t db_indirect;               /* double indirect block. */
+    uint32_t direct_idx;                /* Index of direct blocks. */
+    uint32_t indirect_idx;              /* Index of indirect blocks. */
+    uint32_t db_indirect_idx;           /* Index of double indirect block. */
     uint32_t unused[110];               /* Not used. */
     uint32_t blocks[TOTAL_DIRECT];      /* Inode's blocks */
   };
@@ -52,6 +52,7 @@ struct inode
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    struct lock lock;
     struct inode_disk data;             /* Inode content. */
   };
 struct bitmap;

@@ -62,6 +62,7 @@ get_doubly_indirect_sector (const struct inode *inode, uint32_t index,
   position %= (BLOCK_SECTOR_SIZE * MAX_DIRECT);
   return db_indirect[position / BLOCK_SECTOR_SIZE];
 }
+
 /* Returns the block device sector that contains byte offset POS
    within INODE.
    Returns -1 if INODE does not contain data for a byte at offset
@@ -180,6 +181,7 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
+  lock_init (&inode->lock);
   block_read (fs_device, inode->sector, &inode->data);
   return inode;
 }
@@ -251,49 +253,50 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
-
-  while (size > 0) 
+  
+  /* Check if offset is within inode's length */
+  if (offset < inode_length (inode))
     {
-      /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset);
-      int sector_ofs = offset % BLOCK_SECTOR_SIZE;
-
-      /* Bytes left in inode, bytes left in sector, lesser of the two. */
-      off_t inode_left = inode_length (inode) - offset;
-      int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
-      int min_left = inode_left < sector_left ? inode_left : sector_left;
-
-      /* Number of bytes to actually copy out of this sector. */
-      int chunk_size = size < min_left ? size : min_left;
-      if (chunk_size <= 0)
-        break;
-
-      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
+      while (size > 0) 
         {
-          /* Read full sector directly into caller's buffer. */
-          block_read (fs_device, sector_idx, buffer + bytes_read);
-        }
-      else 
-        {
-          /* Read sector into bounce buffer, then partially copy
-             into caller's buffer. */
-          if (bounce == NULL) 
+          /* Disk sector to read, starting byte offset within sector. */
+          block_sector_t sector_idx = byte_to_sector (inode, offset);
+          int sector_ofs = offset % BLOCK_SECTOR_SIZE;
+
+          /* Bytes left in inode, bytes left in sector, lesser of the two. */
+          off_t inode_left = inode_length (inode) - offset;
+          int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
+          int min_left = inode_left < sector_left ? inode_left : sector_left;
+
+          /* Number of bytes to actually copy out of this sector. */
+          int chunk_size = size < min_left ? size : min_left;
+          if (chunk_size <= 0)
+            break;
+
+          if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
+            /* Read full sector directly into caller's buffer. */
+            block_read (fs_device, sector_idx, buffer + bytes_read);
+          else 
             {
-              bounce = malloc (BLOCK_SECTOR_SIZE);
-              if (bounce == NULL)
-                break;
+              /* Read sector into bounce buffer, then partially copy
+                into caller's buffer. */
+              if (bounce == NULL) 
+                {
+                  bounce = malloc (BLOCK_SECTOR_SIZE);
+                  if (bounce == NULL)
+                    break;
+                }
+              block_read (fs_device, sector_idx, bounce);
+              memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
             }
-          block_read (fs_device, sector_idx, bounce);
-          memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
+          
+          /* Advance. */
+          size -= chunk_size;
+          offset += chunk_size;
+          bytes_read += chunk_size;
         }
-      
-      /* Advance. */
-      size -= chunk_size;
-      offset += chunk_size;
-      bytes_read += chunk_size;
+      free (bounce);
     }
-  free (bounce);
-
   return bytes_read;
 }
 
@@ -312,6 +315,16 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if (inode->deny_write_cnt)
     return 0;
+
+  /* Check if offset is within inode's length */
+  if (offset + size > inode_length (inode))
+    {
+      /* Acquire inode's lock to prevent race and promote synchronization */
+      lock_acquire (&((struct inode *)inode)->lock);
+      /* Extend the inode if currently not enough */
+      inode_extend (inode, offset + size);
+      lock_release (&((struct inode *) inode)->lock);
+    }
 
   while (size > 0) 
     {
