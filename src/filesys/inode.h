@@ -48,9 +48,11 @@ struct inode
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct lock lock;
+    struct lock lock;                   /* Synchronization primitive for 
+                                           protecting access to the inode */
     struct inode_disk data;             /* Inode content. */
   };
+  
 struct bitmap;
 
 void inode_init (void);
@@ -69,8 +71,8 @@ void inode_extend (struct inode *, off_t);
 void inode_free (struct inode *);
 void inode_free_indirect (block_sector_t *, size_t);
 void inode_free_db_indirect (block_sector_t *, size_t, size_t);
-void initialize_inode_data(struct inode *);
-void copy_inode_data(struct inode *, struct inode_disk *);
+void initialize_inode_data (struct inode *);
+void copy_inode_data (struct inode *, struct inode_disk *);
 size_t inode_grow_indirect (struct inode *, size_t);
 size_t inode_grow_db_indirect (struct inode *, size_t);
 
