@@ -25,12 +25,6 @@
 #define MAX_DIRECT 128
 #define TOTAL_DIRECT (DIRECT_SIZE + INDIRECT_SIZE + DB_INDIRECT_SIZE)
 
-/* Struct for indirect blocks */
-struct indirect_block
-  {
-    block_sector_t blocks[MAX_DIRECT];
-  };
-
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
@@ -68,8 +62,12 @@ off_t inode_read_at (struct inode *, void *, off_t size, off_t offset);
 off_t inode_write_at (struct inode *, const void *, off_t size, off_t offset);
 void inode_deny_write (struct inode *);
 void inode_allow_write (struct inode *);
-off_t inode_length (const struct inode *);
+off_t inode_length (struct inode *);
 void inode_extend (struct inode *, off_t);
 void inode_free (struct inode *);
+void initialize_inode_data(struct inode *);
+void copy_inode_data(struct inode *, struct inode_disk *);
+size_t inode_grow_indirect (struct inode *, size_t);
+size_t inode_grow_db_indirect (struct inode *, size_t);
 
 #endif /* filesys/inode.h */
