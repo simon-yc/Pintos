@@ -13,6 +13,9 @@
    returns the same `struct inode'. */
 static struct list open_inodes;
 
+static size_t calc_indirect_sectors (off_t);
+static size_t calc_db_indirect_sector (off_t);
+static inline size_t bytes_to_sectors (off_t);
 static block_sector_t get_direct_sector (const struct inode *, off_t);
 static block_sector_t get_indirect_sector (const struct inode *, uint32_t, off_t);
 static block_sector_t get_doubly_indirect_sector (const struct inode *, uint32_t, off_t);
@@ -220,17 +223,14 @@ inode_close (struct inode *inode)
       if (inode->removed) 
         {
           free_map_release (inode->sector, 1);
+          /* Free all the blocks that the inode has */
           inode_free (inode);
         }
-
+      else
+        /* Otherwise, will write the inode back into the disk */
+        block_write (fs_device, inode->sector, &inode->data);
       free (inode); 
     }
-}
-
-void 
-inode_free (struct inode *inode)
-{
-  return;
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
@@ -422,6 +422,115 @@ copy_inode_data (struct inode *src, struct inode_disk *dst)
   dst->db_indirect_idx = src->data.db_indirect_idx;
   memcpy (&dst->blocks, &src->data.blocks, 
          TOTAL_DIRECT * sizeof (block_sector_t));
+}
+
+/* Releases the inode resources and frees the inode by traversing through 
+   direct, indirect, and doubly indirect data blocks to release their 
+   associated sectors*/
+void 
+inode_free (struct inode *inode)
+{
+  /* Calculate the total number of sectors based on the inode's length. */
+  size_t remain_sectors = bytes_to_sectors (inode->data.length);
+  int pos = 0;
+
+  /* Free direct data blocks by iterate through the direct data blocks and 
+     release the associated sectors. Continue until there are no remaining 
+     sectors or all direct data blocks have been visited */
+  while (remain_sectors && pos < DIRECT_SIZE)
+    {
+      free_map_release (inode->data.blocks[pos], 1);
+      remain_sectors--;
+      pos++;
+    }
+
+  /* Free indirect data blocks. Iterate through the indirect data blocks until 
+     there are no remaining sectors to free, all indirect sectors have been 
+     visited, or the limit of direct and indirect blocks is reached */
+  size_t indirect_sectors = calc_indirect_sectors (inode->data.length);
+  while (indirect_sectors && pos < (DIRECT_SIZE + INDIRECT_SIZE))
+    {
+      size_t sectors_num = remain_sectors < MAX_DIRECT ? remain_sectors : MAX_DIRECT;
+      inode_free_indirect (&inode->data.blocks[pos], sectors_num);
+      remain_sectors -= sectors_num;
+      indirect_sectors--;
+      pos++;
+    }
+
+  /* Free double indirect data blocks. Iterate through the doubly indirect 
+     data blocks until there are no remaining sectors, all doubly indirect 
+     sectors have been visited, or the limit of direct, indirect, and doubly 
+     indirect blocks is reached. */
+  size_t db_indirect_sector = calc_db_indirect_sector (inode->data.length);
+  while (db_indirect_sector && pos < (DIRECT_SIZE + INDIRECT_SIZE + 
+            DB_INDIRECT_SIZE))
+    {
+      size_t sectors_num = remain_sectors < MAX_DIRECT ? remain_sectors : MAX_DIRECT;
+      inode_free_db_indirect (&inode->data.blocks[pos], db_indirect_sector,
+                             remain_sectors);
+      remain_sectors -= sectors_num;
+      db_indirect_sector--;
+      pos++;    
+    }
+}
+
+/* Calculate the number of indirect sectors for the given size */
+static size_t
+calc_indirect_sectors (off_t size)
+{
+  if (size <= BLOCK_SECTOR_SIZE * DIRECT_SIZE)
+    return 0;
+  size -= BLOCK_SECTOR_SIZE * DIRECT_SIZE;
+  return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE * MAX_DIRECT);
+}
+
+/* Calculate the number of doublely indirect sectors for the given size */
+static size_t 
+calc_db_indirect_sector (off_t size)
+{
+  if (size <= BLOCK_SECTOR_SIZE*(DIRECT_SIZE +
+				INDIRECT_SIZE*MAX_DIRECT))
+    return 0;
+  size -= BLOCK_SECTOR_SIZE * (DIRECT_SIZE + INDIRECT_SIZE * MAX_DIRECT);
+  return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE * MAX_DIRECT * MAX_DIRECT);
+}
+
+/* Reads the indirect block and releases all data blocks within it, then 
+   releases the indirect block itself at the end */
+void 
+inode_free_indirect (block_sector_t *sector, size_t sectors_num)
+{
+  unsigned int i;
+  block_sector_t indirect[MAX_DIRECT];
+
+  /* Read the indirect block from the file system device. */
+  block_read (fs_device, *sector, &indirect);
+  /* Free all associated sectors in the indirect block */
+  for (i = 0; i < sectors_num; i++)
+    free_map_release (indirect[i], 1);
+  /* Release the indirect block */
+  free_map_release (*sector, 1);
+}
+
+/* Reads the doubly indirect block and releases all indirect blocks within 
+   it, then releases the doubly indirect block itself at the end */
+void 
+inode_free_db_indirect (block_sector_t *sector, size_t indirect_ptrs,
+					              size_t sectors_num)
+{
+  unsigned int i;
+  block_sector_t indirect[MAX_DIRECT];
+  /* Read the doubly indirect block from the file system device. */
+  block_read (fs_device, *sector, &indirect);
+  /* Free all indirect blocks in the db indirect block */
+  for (i = 0; i < indirect_ptrs; i++)
+    {
+      size_t data_per_block = sectors_num < MAX_DIRECT ? sectors_num : MAX_DIRECT;
+      inode_free_indirect (&indirect[i], data_per_block);
+      sectors_num -= data_per_block;
+    }
+  /* Release the doubly indirect block */
+  free_map_release (*sector, 1);
 }
 
 /* Extends the given inode to the specified new length */

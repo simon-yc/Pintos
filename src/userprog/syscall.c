@@ -179,17 +179,14 @@ handle_read (int fd, void *buffer, unsigned size)
         temp_buf[i] = input_getc ();
       return size;
     }
-  lock_acquire (&filesys_lock);
 
   /* find file with fd = fd in current thread's opened files list. */
   struct file *file = find_opened_file (fd);
   if (!file)
     {
-      lock_release (&filesys_lock);
       return -1;
     }
   int bytes_read = file_read (file, buffer, size);
-  lock_release (&filesys_lock);
   return bytes_read;
 }
 
@@ -202,17 +199,14 @@ handle_write (int fd, void *buffer, unsigned size)
       putbuf ((const char *) buffer, size);
       return size;
     }
-  lock_acquire (&filesys_lock);
 
   /* find file with fd = fd in current thread's opened files list. */
   struct file *file = find_opened_file (fd);
   if (!file)
     {
-      lock_release (&filesys_lock);
       return -1;
     }
   int bytes_write = file_write (file, buffer, size);
-  lock_release (&filesys_lock);
   return bytes_write;
 }
 

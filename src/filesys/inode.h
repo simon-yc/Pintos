@@ -65,6 +65,8 @@ void inode_allow_write (struct inode *);
 off_t inode_length (struct inode *);
 void inode_extend (struct inode *, off_t);
 void inode_free (struct inode *);
+void inode_free_indirect (block_sector_t *, size_t);
+void inode_free_db_indirect (block_sector_t *, size_t, size_t);
 void initialize_inode_data(struct inode *);
 void copy_inode_data(struct inode *, struct inode_disk *);
 size_t inode_grow_indirect (struct inode *, size_t);
