@@ -6,19 +6,16 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
+#include <stdio.h>
 
-/* Identifies an inode. */
-#define INODE_MAGIC 0x494e4f44
+/* List of open inodes, so that opening a single inode twice
+   returns the same `struct inode'. */
+static struct list open_inodes;
 
-/* On-disk inode.
-   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk
-  {
-    block_sector_t start;               /* First data sector. */
-    off_t length;                       /* File size in bytes. */
-    unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
-  };
+static block_sector_t get_direct_sector (const struct inode *, off_t);
+static block_sector_t get_indirect_sector (const struct inode *, uint32_t, off_t);
+static block_sector_t get_doubly_indirect_sector (const struct inode *, uint32_t, off_t);
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -28,17 +25,43 @@ bytes_to_sectors (off_t size)
   return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE);
 }
 
-/* In-memory inode. */
-struct inode 
-  {
-    struct list_elem elem;              /* Element in inode list. */
-    block_sector_t sector;              /* Sector number of disk location. */
-    int open_cnt;                       /* Number of openers. */
-    bool removed;                       /* True if deleted, false otherwise. */
-    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct inode_disk data;             /* Inode content. */
-  };
+/* Helper function to get the direct block sector */
+static block_sector_t
+get_direct_sector (const struct inode *inode, off_t position)
+{
+  return inode->data.blocks[position / BLOCK_SECTOR_SIZE];
+}
 
+/* Helper function to get the indirect block sector. 
+   index indicate which indirect block, i.e, which block. For example, if is 
+   the 2nd indirect block, index = numb of direct block + 2. 
+   position indicate the position of the sector in this indirect block */
+static block_sector_t
+get_indirect_sector (const struct inode *inode, uint32_t index, off_t position)
+{
+  /* Create an array to store the indirect block pointers */
+  block_sector_t indirect[MAX_DIRECT];
+  block_read (fs_device, inode->data.blocks[index], &indirect);
+  return indirect[position / BLOCK_SECTOR_SIZE];
+}
+
+/* Helper function to get the doubly indirect block sector 
+   index indicate the corresponding position for thsi sector in the inode.
+   position indicate the position of the sector in this db_indirect block*/
+static block_sector_t
+get_doubly_indirect_sector (const struct inode *inode, uint32_t index, 
+                            off_t position)
+{
+  /* Create an array to store the doublely indirect block pointers */
+  block_sector_t db_indirect[MAX_DIRECT];
+  block_read (fs_device, inode->data.blocks[index], &db_indirect);
+  /* Create an array to store the indirect block pointers */
+  block_read (fs_device, 
+             db_indirect[(position / (BLOCK_SECTOR_SIZE * MAX_DIRECT))],
+             &db_indirect);
+  position %= (BLOCK_SECTOR_SIZE * MAX_DIRECT);
+  return db_indirect[position / BLOCK_SECTOR_SIZE];
+}
 /* Returns the block device sector that contains byte offset POS
    within INODE.
    Returns -1 if INODE does not contain data for a byte at offset
@@ -48,14 +71,33 @@ byte_to_sector (const struct inode *inode, off_t pos)
 {
   ASSERT (inode != NULL);
   if (pos < inode->data.length)
-    return inode->data.start + pos / BLOCK_SECTOR_SIZE;
+    {
+      if (pos < BLOCK_SECTOR_SIZE * DIRECT_SIZE)
+        /* Direct block */ 
+        return get_direct_sector (inode, pos);
+      else if (pos < BLOCK_SECTOR_SIZE * 
+                     (DIRECT_SIZE + INDIRECT_SIZE * MAX_DIRECT))
+        {
+          /* Indirect block, update position first */
+          pos -= BLOCK_SECTOR_SIZE * DIRECT_SIZE;
+          return get_indirect_sector (inode, 
+                                      (pos / (BLOCK_SECTOR_SIZE * MAX_DIRECT) + 
+                                              DIRECT_SIZE), 
+                                      pos % (BLOCK_SECTOR_SIZE * MAX_DIRECT));
+        }
+      else
+        {
+          /* DB Indirect block, update position first */
+          pos -= BLOCK_SECTOR_SIZE * (DIRECT_SIZE + 
+                                      INDIRECT_SIZE * MAX_DIRECT);
+          return get_doubly_indirect_sector (inode,
+                                             DIRECT_SIZE + INDIRECT_SIZE, 
+                                             pos);              
+        }
+    }
   else
     return -1;
 }
-
-/* List of open inodes, so that opening a single inode twice
-   returns the same `struct inode'. */
-static struct list open_inodes;
 
 /* Initializes the inode module. */
 void
@@ -84,25 +126,26 @@ inode_create (block_sector_t sector, off_t length)
   disk_inode = calloc (1, sizeof *disk_inode);
   if (disk_inode != NULL)
     {
-      size_t sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
-      if (free_map_allocate (sectors, &disk_inode->start)) 
-        {
-          block_write (fs_device, sector, disk_inode);
-          if (sectors > 0) 
-            {
-              static char zeros[BLOCK_SECTOR_SIZE];
-              size_t i;
-              
-              for (i = 0; i < sectors; i++) 
-                block_write (fs_device, disk_inode->start + i, zeros);
-            }
-          success = true; 
-        } 
+      struct inode inode;
+
+      /* Allocate more sectors for the inode if needed */
+      inode_extend (&inode, disk_inode->length);
+
+      /* Write the disk inode to the disk as inode has been extended*/
+      block_write (fs_device, sector, disk_inode);
+      success = true; 
       free (disk_inode);
     }
   return success;
+}
+
+/* Extends the given inode to the specified new length */
+void 
+inode_extend (struct inode *inode, off_t new_len)
+{
+  return;
 }
 
 /* Reads an inode from SECTOR
@@ -177,12 +220,17 @@ inode_close (struct inode *inode)
       if (inode->removed) 
         {
           free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length)); 
+          inode_free (inode);
         }
 
       free (inode); 
     }
+}
+
+void 
+inode_free (struct inode *inode)
+{
+  return;
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
