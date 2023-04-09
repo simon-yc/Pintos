@@ -36,7 +36,8 @@ struct inode_disk
     uint32_t db_indirect_idx;           /* Index of double indirect block. */
     uint32_t unused[109];               /* Not used. */
     uint32_t blocks[TOTAL_DIRECT];      /* Inode's blocks */
-    int read_end;                       /*  */
+    int read_end;                       /* Current file length that can be 
+                                           read. */
   };
 
 /* In-memory inode. */

@@ -8,9 +8,9 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Meiyi Xie <flora.xie@mail.utoronto.com>
+Linda Shi <lindashi.shi@mail.utoronto.ca>
+Simon Chau <simon.chau@mail.utoronto.ca>
 
 ---- PRELIMINARIES ----
 
@@ -30,13 +30,83 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+Declared new global variable for inode:
+    /* Number of direct pointers in the inode. */
+    #define DIRECT_SIZE 8
+
+    /* Number of indirect pointers in the inode. */
+    #define INDIRECT_SIZE 4
+
+    /* Number of doubly indirect pointers in the inode. */
+    #define DB_INDIRECT_SIZE 1
+
+    /* Maximum number of pointers in the parent block. */
+    #define MAX_DIRECT 128
+
+    /* Total pointers in the inode (direct, indirect, doubly indirect). */
+    #define TOTAL_DIRECT (DIRECT_SIZE + INDIRECT_SIZE + DB_INDIRECT_SIZE)
+
+Added to struct inode_disk
+    /* Index for direct pointer used for inode extention. */
+    uint32_t direct_idx; 
+
+    /* Index for indirect pointer used for inode extention. */         
+    uint32_t indirect_idx;  
+
+    /* Index for doubly indirect pointer used for inode extention. */            
+    uint32_t db_indirect_idx;     
+
+    /* Array storing block pointers (direct, indirect, doubly indirect). */     
+    uint32_t blocks[TOTAL_DIRECT];     
+
+Changed in struct inode_disk
+    /* Changed unused size to 110 to accommodate modified inode_disk struct. */
+    uint32_t unused[110];             
+
+Added to struct inode:
+    /* Synchronization primitive for protecting access to the inode. */
+    struct lock lock;
+
+
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
+
+Direct = DIRECT_SIZE * BLOCK_SECTOR_SIZE
+Indirect = (INDIRECT_SIZE * MAX_DIRECT) * BLOCK_SECTOR_SIZE
+Doubly Indirect = (DB_INDIRECT_SIZE * MAX_DIRECT * MAX_DIRECT) * BLOCK_SECTOR_SIZE
+
+We have 8 direct blocks, 4 indirect blocks and 1 doubly indirect block for 
+each inode in inode.data structure. 
+    8 direct blocks = 8*512 = 4,096 bytes
+    4 indirect blocks = 4*128*512 = 262,144 bytes
+    1 doubly indirect blocks = 1*128*128*512 = 8,388,608 bytes
+    Total: 8,654,848 bytes
+    1 MB = 1,048,576 bytes
+Therefore, our inode structure supports max aproximate 8.25 MB files.
 
 ---- SYNCHRONIZATION ----
 
 >> A3: Explain how your code avoids a race if two processes attempt to
 >> extend a file at the same time.
+
+Our code avoids a race if two processes attempt to extend a file at the 
+same time by using a lock. By using a lock, we can prevent a potential race 
+in file extensions, ensuring that only one process can extend the file at a 
+time. When a process wants to extend a file, it must acquire the inode lock. 
+Another process will not be able to access te inode until the lock is 
+released. Once a lock is acquired, the size of the file is computed based on 
+the extention. For example, supppose we have two processes, Process-A and 
+Process-B, both want to extend a file at the same time. Without a lock, it is 
+possible that both processes could attempt to extend the file at the same time. 
+This would result in the file being extended twice and allocating twice as 
+many blocks. However, by using a lock, only one process can extend the file 
+at a time. When Process-A acquires the lock and extends the file, it also 
+updates the length of the file. After this, when Process-B tries to acquire 
+the lock and extend the file, it will see that the file has already been 
+extended, as the length will have been updated by Process-A. The lock ensures 
+the file is only extended once, even though two processes attempted to do so 
+at the same time. This prevents the file from being extended twice. Therefore 
+avoiding race conditions.
 
 >> A4: Suppose processes A and B both have file F open, both
 >> positioned at end-of-file.  If A reads and B writes F at the same
@@ -45,12 +115,39 @@ FirstName LastName <email@domain.example>
 >> nonzero data, A is not allowed to see all zeros.  Explain how your
 >> code avoids this race.
 
+Our code avoids this race by using the read_end variable in the inode's data. 
+Referring to the example given in the question, since B is writing to F, the 
+length variable of the inode is changed. However, the read_end variable of 
+the inode will not change until the data has been written. In other words, 
+this means that A will only see the file before the extended data has been 
+written or after the write is complete. This will ensure that A reads 
+correctly. Therefore, if B writes nonzero data to F while A is reading, A 
+will not see all zeros as it is not allowed to read any data other than what 
+B writes. This avoids the race condition that A may read all, part of, or 
+none of the data that B writes. 
+
 >> A5: Explain how your synchronization design provides "fairness".
 >> File access is "fair" if readers cannot indefinitely block writers
 >> or vice versa.  That is, many processes reading from a file cannot
 >> prevent forever another process from writing the file, and many
 >> processes writing to a file cannot prevent another process forever
 >> from reading the file.
+
+Our synchronization design provides "fairness" because it allows multiple 
+processes to read from the file without blocking each other or interfering 
+with the file. If a process wants to write to the file, it will not block 
+other processes reading from the file. As described in A4, we have a variable 
+read_end that ensures that we have no race conditions when reading at the 
+same time a file is being written to. If an extention is required, other 
+processes can still read or write to the existing part of the file, however, 
+the new data that is being written is unaccessable until the lock that was 
+acquired prior to the extention is released. Therefore our file access is 
+"fair" because readers cannot even block writers, let alone block them 
+indefinitely. In contrast, readers can still read parts of the file even when 
+it is being written to. The only part that is locked is the extention. 
+However, right after the extention is finished, the lock is immediately 
+released. Therefore, our synchronization design provides "fairness" to 
+readers and writers. 
 
 ---- RATIONALE ----
 
@@ -59,6 +156,49 @@ FirstName LastName <email@domain.example>
 >> indirect blocks?  If not, why did you choose an alternative inode
 >> structure, and what advantages and disadvantages does your
 >> structure have, compared to a multilevel index?
+
+Our inode structure is a multilevel index. We use a multilevel index 
+structure with three levels of indexing in order to store the data for 
+at least 8 MB files. We start at one level and if we need more space, 
+the inode design uses the next level of indexing.
+
+The first level is made up of direct data blocks, which are used to store 
+the first portion of the data of a file. Each block has a fixed size, and 
+when a file is created or extended, we assign some of these blocks to the 
+file. We define DIRECT_SIZE = 8, which is the number of direct data blocks 
+that can be stored directly in the inode structure. We chose this constant 
+because it is a common choice for many file systems. This choice allows for 
+small files to be stored completely within the inode.
+
+The second level of indexing is used when the space from the direct data 
+blocks is not enough. In the second level of indexing, we use indirect 
+blocks. An indirect block is a block that has a list of pointers to 
+other data blocks that contain the data of a given file. The number of 
+pointers depend on the block size. We define INDIRECT_SIZE = 4, which is 
+the maximum number of data block pointers we can store in a single indirect 
+block. We chose this constant because it is a common choice for many file 
+systems. We figured that it was a good balance between the maximum file size 
+we could have and the resulting complexity of this 
+indexing structure. 
+
+The third and final level of indexing our inode structure uses are the doubly 
+indirect blocks. A doubly indirect block is a block that has a list of 
+pointers to other indirect blocks and each indirect block also has pointers 
+to blocks that store the data of a given file. The number of pointers depend 
+on the block size. We define DB_INDIRECT_SIZE = 1, which is the maximum 
+number of pointers to indirect blocks that we can store in a doubly indirect 
+block. We chose this constant because it is a common choice for many file 
+systems. This is the lowest level of indexing that we have and we figured 
+that increasing the block size here would unnecessarily increase the 
+complexity of our indexing structure. 
+
+Overall, a multilevel indexing structure allows us to be able to manage 
+large files without wasting space and causing external fragmentation. 
+However, this indexing does come with the disadvantage of having to 
+perform multiple reads. We figured that the benefits of avoiding 
+external fragmentation outweigh the potential performance overhead 
+(in any case, we are required to implement doubly-indirect blocks 
+anyway as specified in the handout). 
 
                 SUBDIRECTORIES
                 ==============
