@@ -132,6 +132,7 @@ inode_create (block_sector_t sector, off_t length)
   if (disk_inode != NULL)
     {
       disk_inode->length = length;
+      disk_inode->read_end = length;
       disk_inode->magic = INODE_MAGIC;
       struct inode inode;
       initialize_inode_data (&inode);
@@ -252,8 +253,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
   
+  off_t length = inode->data.read_end;
   /* Check if offset is within inode's length */
-  if (offset < inode_length (inode))
+  if (offset < length)
     {
       while (size > 0) 
         {
@@ -262,7 +264,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
           int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
           /* Bytes left in inode, bytes left in sector, lesser of the two. */
-          off_t inode_left = inode_length (inode) - offset;
+          off_t inode_left = length - offset;
           int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
           int min_left = inode_left < sector_left ? inode_left : sector_left;
 
@@ -373,7 +375,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       bytes_written += chunk_size;
     }
   free (bounce);
-
+  inode->data.read_end = inode_length(inode);
   return bytes_written;
 }
 
@@ -408,6 +410,7 @@ void
 initialize_inode_data (struct inode *inode) 
 {
   inode->data.length = 0;
+  inode->data.read_end = 0;
   inode->data.direct_idx = 0;
   inode->data.indirect_idx = 0;
   inode->data.db_indirect_idx = 0;

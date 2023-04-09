@@ -34,8 +34,9 @@ struct inode_disk
     uint32_t direct_idx;                /* Index of direct blocks. */
     uint32_t indirect_idx;              /* Index of indirect blocks. */
     uint32_t db_indirect_idx;           /* Index of double indirect block. */
-    uint32_t unused[110];               /* Not used. */
+    uint32_t unused[109];               /* Not used. */
     uint32_t blocks[TOTAL_DIRECT];      /* Inode's blocks */
+    int read_end;                       /*  */
   };
 
 /* In-memory inode. */
