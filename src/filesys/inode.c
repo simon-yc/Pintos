@@ -17,8 +17,10 @@ static size_t calc_indirect_sectors (off_t);
 static size_t calc_db_indirect_sector (off_t);
 static inline size_t bytes_to_sectors (off_t);
 static block_sector_t get_direct_sector (const struct inode *, off_t);
-static block_sector_t get_indirect_sector (const struct inode *, uint32_t, off_t);
-static block_sector_t get_doubly_indirect_sector (const struct inode *, uint32_t, off_t);
+static block_sector_t get_indirect_sector (const struct inode *, uint32_t, 
+                                           off_t);
+static block_sector_t get_doubly_indirect_sector (const struct inode *, 
+                                                  uint32_t, off_t);
 static void allocate_ind_blocks (block_sector_t *, size_t *, size_t, size_t *);
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -453,7 +455,8 @@ inode_free (struct inode *inode)
   size_t indirect_sectors = calc_indirect_sectors (inode->data.length);
   while (indirect_sectors && pos < (DIRECT_SIZE + INDIRECT_SIZE))
     {
-      size_t sectors_num = remain_sectors < MAX_DIRECT ? remain_sectors : MAX_DIRECT;
+      size_t sectors_num = remain_sectors < MAX_DIRECT ? 
+                           remain_sectors : MAX_DIRECT;
       inode_free_indirect (&inode->data.blocks[pos], sectors_num);
       remain_sectors -= sectors_num;
       indirect_sectors--;
@@ -468,7 +471,8 @@ inode_free (struct inode *inode)
   while (db_indirect_sector && pos < (DIRECT_SIZE + INDIRECT_SIZE + 
             DB_INDIRECT_SIZE))
     {
-      size_t sectors_num = remain_sectors < MAX_DIRECT ? remain_sectors : MAX_DIRECT;
+      size_t sectors_num = remain_sectors < MAX_DIRECT ? 
+                           remain_sectors : MAX_DIRECT;
       inode_free_db_indirect (&inode->data.blocks[pos], db_indirect_sector,
                              remain_sectors);
       remain_sectors -= sectors_num;
@@ -528,7 +532,8 @@ inode_free_db_indirect (block_sector_t *sector, size_t indirect_ptrs,
   /* Free all indirect blocks in the db indirect block */
   for (i = 0; i < indirect_ptrs; i++)
     {
-      size_t data_per_block = sectors_num < MAX_DIRECT ? sectors_num : MAX_DIRECT;
+      size_t data_per_block = sectors_num < MAX_DIRECT ? 
+                              sectors_num : MAX_DIRECT;
       inode_free_indirect (&indirect[i], data_per_block);
       sectors_num -= data_per_block;
     }
@@ -559,10 +564,12 @@ inode_extend (struct inode *inode, off_t new_len)
   while (inode->data.direct_idx < DIRECT_SIZE)
     {
       free_map_allocate (1, &inode->data.blocks[inode->data.direct_idx]);
-      block_write (fs_device, inode->data.blocks[inode->data.direct_idx], empty_block);
+      block_write (fs_device, inode->data.blocks[inode->data.direct_idx], 
+                   empty_block);
       inode->data.direct_idx++;
       remaining_sec--;
-      /* If all needed sectors are extended, update the inode's length and return */
+      /* If all needed sectors are extended, update the inode's length and 
+         return */
       if (remaining_sec == 0)
         {
           inode->data.length = new_len;
@@ -574,7 +581,8 @@ inode_extend (struct inode *inode, off_t new_len)
   while (inode->data.direct_idx < (DIRECT_SIZE + INDIRECT_SIZE))
     {
       remaining_sec = inode_grow_indirect (inode, remaining_sec);
-      /* If all needed sectors are extended, update the inode's length and return */
+      /* If all needed sectors are extended, update the inode's length and 
+         return */
       if (remaining_sec == 0)
         {
           inode->data.length = new_len;
@@ -583,10 +591,12 @@ inode_extend (struct inode *inode, off_t new_len)
     }
 
   /* Extend doublely indirect data blocks */
-  while (inode->data.direct_idx < (DIRECT_SIZE + INDIRECT_SIZE + DB_INDIRECT_SIZE))
+  while (inode->data.direct_idx < (DIRECT_SIZE + INDIRECT_SIZE + 
+                                   DB_INDIRECT_SIZE))
     {
       remaining_sec = inode_grow_db_indirect (inode, remaining_sec);
-      /* If all needed sectors are extended, update the inode's length and return */
+      /* If all needed sectors are extended, update the inode's length and 
+         return */
       if (remaining_sec == 0)
         {
           inode->data.length = new_len;
@@ -597,7 +607,8 @@ inode_extend (struct inode *inode, off_t new_len)
 
 /* Helper function for growing indirect blocks */
 static void
-allocate_ind_blocks (block_sector_t *parent_block, size_t *index, size_t max_index, size_t *remaining_sec)
+allocate_ind_blocks (block_sector_t *parent_block, size_t *index, 
+                     size_t max_index, size_t *remaining_sec)
 {
   /* Declare an empty block to be used when writing new data blocks */
   static char empty_block[BLOCK_SECTOR_SIZE];
@@ -630,7 +641,8 @@ allocate_ind_blocks (block_sector_t *parent_block, size_t *index, size_t max_ind
 size_t 
 inode_grow_indirect(struct inode *inode, size_t remaining_sec)
 {
-  allocate_ind_blocks(&inode->data.blocks[inode->data.direct_idx], &inode->data.indirect_idx, MAX_DIRECT, &remaining_sec);
+  allocate_ind_blocks(&inode->data.blocks[inode->data.direct_idx], 
+                      &inode->data.indirect_idx, MAX_DIRECT, &remaining_sec);
 
   /* If all entries in the indirect block are used, reset the indirect index 
      and increment the direct index */
@@ -654,12 +666,15 @@ inode_grow_db_indirect(struct inode *inode, size_t remaining_sec)
   if (inode->data.db_indirect_idx == 0 && inode->data.indirect_idx == 0)
     free_map_allocate(1, &inode->data.blocks[inode->data.direct_idx]);
   else
-    block_read(fs_device, inode->data.blocks[inode->data.direct_idx], &db_indirect);
+    block_read(fs_device, inode->data.blocks[inode->data.direct_idx], 
+               &db_indirect);
 
   /* While loop for each indirects */
   while (inode->data.indirect_idx < MAX_DIRECT)
   {
-    allocate_ind_blocks(&db_indirect[inode->data.indirect_idx], &inode->data.db_indirect_idx, MAX_DIRECT, &remaining_sec);
+    allocate_ind_blocks(&db_indirect[inode->data.indirect_idx], 
+                        &inode->data.db_indirect_idx, MAX_DIRECT, 
+                        &remaining_sec);
 
     /* If all entries in the indirect block are used, reset the doubly 
         indirect index and increment the indirect index */
@@ -674,6 +689,7 @@ inode_grow_db_indirect(struct inode *inode, size_t remaining_sec)
   }
 
   /* Write the updated doubly indirect block back to the file system device */
-  block_write(fs_device, inode->data.blocks[inode->data.direct_idx], &db_indirect);
+  block_write(fs_device, inode->data.blocks[inode->data.direct_idx], 
+              &db_indirect);
   return remaining_sec;
 }
